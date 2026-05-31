@@ -13,7 +13,7 @@ from langchain.tools import tool
 from pydantic import BaseModel
 
 from tools.scraper import scrape_retailmenot, scrape_honey, scrape_idealo
-from tools.search import brave_search, reddit_search, extract_codes_from_text
+from tools.search import tavily_search, reddit_search, extract_codes_from_text
 from tools.cache import get_cached_codes, write_validated_code, get_merchant_history
 from tools.validator import validate_code_at_checkout
 from tools.bonial import get_bonial_deals
@@ -121,7 +121,7 @@ Min saving required: €{state.min_saving or 0}
 
 Available tools:
 - scraper: Playwright scrape of RetailMeNot, Honey, Idealo. Slow (4–8s) but comprehensive.
-- search: Brave Search API + Reddit. Fast (1–2s), finds codes in blog posts and deal threads.
+- search: Tavily Search API + Reddit. Fast (1–2s), finds codes in blog posts and deal threads.
 - cache: Redis lookup of previously validated codes. Instant. Always try this first.
 - bonial: kaufDA/Bonial weekly leaflet scraper. Returns in-store EU promotions.
 
@@ -197,7 +197,7 @@ async def run_tools_node(state: AgentState) -> AgentState:
             elif tool_name == "search":
                 snippets = []
                 for query in queries:
-                    r = await brave_search(query)
+                    r = await tavily_search(query)
                     snippets.extend(r.get("snippets", []))
                 reddit = await reddit_search(state.merchant)
                 snippets.extend(reddit.get("snippets", []))
