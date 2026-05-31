@@ -1,0 +1,47 @@
+services:
+
+  # ── Backend: Python web service ─────────────────────────────────────────────
+  - type: web
+    name: pricehunt-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      playwright install chromium
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: BRAVE_API_KEY
+        sync: false
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_CLIENT_SECRET
+        sync: false
+      - key: RAKUTEN_API_KEY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: pricehunt-redis
+          property: connectionString
+
+  # ── Frontend: static site (plain HTML, no build step) ──────────────────────
+  # The only "build" step is a sed command that swaps the localhost URL
+  # in index.html with the real backend URL on Render.
+  # No npm, no node_modules, no bundler needed.
+  - type: static
+    name: pricehunt-frontend
+    rootDir: frontend
+    buildCommand: >-
+      sed -i "s|http://localhost:8000|https://pricehunt-backend.onrender.com|g" index.html
+    staticPublishPath: .
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+
+  # ── Redis: free 25MB instance ───────────────────────────────────────────────
+  - type: redis
+    name: pricehunt-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru

@@ -129,7 +129,7 @@ Each `run_tool(name)` call dispatches to the relevant MCP server:
 |---|---|---|
 | `cache` | cache-mcp-server | Redis lookup — instant, no network cost |
 | `scraper` | scraper-mcp-server | Playwright scrape of RetailMeNot, Honey, Idealo |
-| `search` | search-mcp-server | Brave Search + Reddit, then Haiku extracts codes |
+| `search` | search-mcp-server | Brave Search + Reddit, then Sonnet extracts codes |
 | `bonial` | bonial-mcp-server | kaufDA weekly leaflet scraper |
 
 After all tools finish, codes are deduplicated by code string and stored in `state.raw_codes`.
@@ -158,7 +158,7 @@ even when 20+ raw codes were found.
 After validation, the agent evaluates its own output. This is the self-reflection loop
 that makes Pricehunt an agent rather than a script.
 
-A Claude Haiku call receives the full run context and must respond with a JSON decision:
+A Claude Sonnet call receives the full run context and must respond with a JSON decision:
 
 ```json
 {"decision": "return", "reason": "Found 2 valid codes. Best saves €18. Good enough."}
@@ -266,9 +266,12 @@ See `.claude/tools/` for the tool definition files and `.claude/skills/` for the
 ## APIs — what, why, and how to get them
 
 ### 🧠 Anthropic API
-**What:** The LLM powering the agent. Two models used:
-- `claude-sonnet-4-6` — planner node, reflection node, chat responses. The main brain.
-- `claude-haiku-4-5-20251001` — code extraction from raw search text. Fast and cheap.
+**What:** The LLM powering every part of the agent. One model, used everywhere:
+- `claude-sonnet-4-6` — planner, reflection, code extraction, and chat responses.
+
+A single model keeps the codebase simple and reasoning quality consistent across
+all agent nodes. There is no cheaper model for "simpler" tasks — Sonnet is fast
+enough and the cost difference is negligible at this scale.
 
 **Why Anthropic over OpenAI:** Claude follows complex structured instructions reliably,
 produces clean JSON plans without hallucinating tool names, and handles long tool-result
@@ -388,11 +391,28 @@ key-value lookups (sub-millisecond). The agent reads merchant history before eve
 run — it needs to be instant.
 
 **How to get locally:**
+
+**Windows:**
 ```bash
-brew install redis && redis-server   # macOS
-# or
-docker run -p 6379:6379 redis:alpine
+# Download the Windows installer from https://github.com/microsoftarchive/redis/releases
+# OR use WSL2 (recommended) and follow the Linux instructions below
+winget install Redis.Redis
+redis-server
 ```
+
+**Linux (Ubuntu / Debian):**
+```bash
+sudo apt update && sudo apt install redis-server -y
+sudo systemctl start redis-server
+sudo systemctl enable redis-server   # auto-start on boot
+redis-cli ping                        # should return PONG
+```
+
+**macOS:**
+```bash
+brew install redis && brew services start redis
+```
+
 On Render: add the Redis add-on in your dashboard → it injects `REDIS_URL` automatically.
 
 ```
@@ -406,11 +426,28 @@ REDIS_URL=redis://localhost:6379
 success/failure logs, and user session data.
 
 **How to get locally:**
+
+**Windows:**
 ```bash
-brew install postgresql && pg_ctl start   # macOS
-# or
-docker run -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16
+# Download installer from https://www.postgresql.org/download/windows/
+# Run the EDB installer — it sets up the service automatically
+# Or use WSL2 and follow the Linux instructions
 ```
+
+**Linux (Ubuntu / Debian):**
+```bash
+sudo apt update && sudo apt install postgresql postgresql-contrib -y
+sudo systemctl start postgresql
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'dev';"
+sudo -u postgres createdb pricehunt
+```
+
+**macOS:**
+```bash
+brew install postgresql@16 && brew services start postgresql@16
+createdb pricehunt
+```
+
 On Render: add the Postgres add-on → injects `DATABASE_URL` automatically.
 
 ```
@@ -459,9 +496,18 @@ Priority for getting keys:
 
 ### Prerequisites
 
-- Python 3.11+
-- Node.js 18+
-- Redis running locally (or Docker)
+- Python 3.11+ — https://www.python.org/downloads/
+- Redis running locally (see Redis section above for your OS)
+- A modern browser (Chrome, Firefox, Edge) to open `index.html`
+
+> **Node.js is NOT required** to run Pricehunt. The frontend is a plain HTML file
+> with no build step. Node.js is only needed if you want to run the React reference
+> implementation in `frontend/src/` — which is optional and not deployed.
+
+> **Windows users:** WSL2 (Windows Subsystem for Linux) is strongly recommended.
+> It gives you a full Linux environment inside Windows where all commands in this
+> README work as written. Install it with `wsl --install` in PowerShell as admin,
+> then open Ubuntu and follow the Linux instructions.
 
 ### 1. Clone the repo
 
@@ -482,8 +528,14 @@ cd backend
 python3 -m venv .venv
 
 # Activate it
-source .venv/bin/activate          # macOS / Linux
-# .venv\Scripts\activate           # Windows
+# macOS / Linux / WSL2:
+source .venv/bin/activate
+
+# Windows (Command Prompt):
+# .venv\Scripts\activate.bat
+
+# Windows (PowerShell):
+# .venv\Scripts\Activate.ps1
 
 # Your prompt should now show (.venv)
 # Install dependencies inside the venv
@@ -514,12 +566,26 @@ source .venv/bin/activate
 
 ### 3. Start Redis (if not already running)
 
+**Windows (WSL2 / Ubuntu):**
 ```bash
-# macOS
-brew services start redis
+sudo service redis-server start
+redis-cli ping   # should return PONG
+```
 
-# Docker (any OS)
-docker run -d -p 6379:6379 --name pricehunt-redis redis:alpine
+**Windows (native, if installed via winget):**
+```powershell
+redis-server
+```
+
+**Linux:**
+```bash
+sudo systemctl start redis-server
+redis-cli ping
+```
+
+**macOS:**
+```bash
+brew services start redis
 ```
 
 ### 4. Run the backend
@@ -535,23 +601,47 @@ uvicorn main:app --reload --port 8000
 
 ### 5. Frontend
 
+No install needed. The frontend is a single HTML file.
+
+**Option A — open directly in browser (simplest):**
+```bash
+# Just double-click frontend/index.html
+# or drag it into Chrome/Firefox
+```
+> This works for viewing the UI but the browser will block `fetch()` calls
+> to localhost due to CORS when opened as a `file://` URL.
+> Use Option B during active development.
+
+**Option B — serve with Python (recommended for dev):**
 ```bash
 cd frontend
-npm install
-cp .env.example .env          # sets VITE_API_URL=http://localhost:8000
-npm run dev
-# → http://localhost:5173
+python3 -m http.server 5173
+# → open http://localhost:5173 in your browser
 ```
+Python's built-in HTTP server serves the file over `http://` so fetch() calls
+to `http://localhost:8000` work without any CORS issues.
+
+The `BACKEND` constant in `index.html` defaults to `http://localhost:8000`
+so it connects to your local FastAPI automatically — no configuration needed.
 
 ### 6. Quick start with Make
 
-A `Makefile` at the repo root wraps all of the above:
+A `Makefile` at the repo root wraps the backend setup:
 
 ```bash
-make setup        # create venv, install deps, install Chromium
-make dev          # start backend + frontend in parallel
+make setup        # create venv, install Python deps, install Chromium
+make redis-start  # start Redis (auto-detects Linux/macOS/WSL2)
+make redis-check  # verify Redis is reachable
+make backend      # start FastAPI on port 8000
 make test         # run pytest inside the venv
-make clean        # remove .venv and node_modules
+make clean        # remove .venv
+```
+
+Then in a second terminal:
+```bash
+cd frontend
+python3 -m http.server 5173
+# → open http://localhost:5173
 ```
 
 ---
@@ -649,35 +739,145 @@ pricehunt-autonomous-voucher-agent/
 │       ├── validator.py             # MCP validator server
 │       └── bonial.py               # MCP Bonial/kaufDA server
 └── frontend/
-    ├── .env                         # VITE_API_URL (git-ignored)
-    ├── .env.example
-    ├── src/
-    │   ├── App.jsx                  # main layout — search + chat
-    │   ├── components/
-    │   │   ├── VoucherCard.jsx
-    │   │   ├── ChatPanel.jsx
-    │   │   └── StatsBar.jsx
-    │   └── api.js                   # fetch helpers for /vouchers and /chat
-    └── package.json
+    ├── index.html                   # ★ THE DEPLOYED FILE — plain HTML, real API calls
+    ├── .env.example                 # local dev only (not needed for deploy)
+    └── src/                         # React reference implementation (not deployed)
+        ├── main.jsx                 # React root mount
+        ├── index.css                # global CSS design tokens
+        ├── App.jsx                  # main layout — search + results + tabs
+        ├── App.module.css
+        ├── api.js                   # all backend calls in one place
+        └── components/
+            ├── VoucherCard.jsx      # one merchant result card
+            ├── VoucherCard.module.css
+            ├── ChatPanel.jsx        # chat with history, quick replies, streaming
+            ├── ChatPanel.module.css
+            ├── StatsBar.jsx         # saved / codes / merchants counters
+            └── StatsBar.module.css
 ```
 
 ---
 
-## Deploy to Render
+## Frontend — why plain HTML, not React
 
-Push to GitHub, then create a **Blueprint** deployment using the `render.yaml` at the repo root:
+The frontend is a single `index.html` file. No build step, no npm, no framework.
+
+This is a deliberate choice. React and Vite are powerful but they add complexity
+that this project does not need:
+
+| | Plain HTML (`index.html`) | React + Vite |
+|---|---|---|
+| Deploy | Copy one file | Run `npm install && npm run build` first |
+| Dependencies | Zero | ~200 packages in `node_modules` |
+| Debug | Open in browser directly | Need dev server running |
+| Render config | `buildCommand: ""` | `buildCommand: npm install && npm run build` |
+| What Render actually serves | The file as-is | The compiled `dist/` folder |
+
+The key insight: **React compiles down to plain HTML/CSS/JS anyway.**
+Render never runs React itself — it just serves the compiled output.
+So for a single-page tool like Pricehunt, skipping the compilation step
+and writing that plain HTML/CSS/JS directly is strictly simpler.
+
+The `frontend/src/` React components are included in the repo as a reference
+implementation showing how the app would scale if it grew to multiple pages.
+But the actual deployed file is `frontend/index.html`.
+
+---
+
+## How the frontend talks to the backend
+
+The `index.html` uses plain `fetch()` to call the FastAPI backend.
+The backend URL is configured in one place at the top of the script block:
+
+```javascript
+// In frontend/index.html
+const BACKEND = window.__BACKEND_URL__ || 'http://localhost:8000';
+```
+
+In **local development** this defaults to `http://localhost:8000` — your
+FastAPI server running locally. Open `index.html` directly in a browser or
+serve it with Python:
+
+```bash
+cd frontend
+python3 -m http.server 5173
+# → open http://localhost:5173
+```
+
+In **production on Render**, the `render.yaml` injects the real backend URL
+via a sed command in the build step (see below).
+
+---
+
+## Deploy to Render — step by step
+
+### What you will have after deploying
+
+```
+https://pricehunt-backend.onrender.com   ← FastAPI agent (Python web service)
+https://pricehunt-frontend.onrender.com  ← index.html    (static site, free)
+```
+
+Both are free tier. Render connects them automatically.
+
+### Step 1 — push to GitHub
+
+```bash
+git init
+git add .
+git commit -m "feat: scaffold full-stack MVP — LangGraph agent, FastAPI backend, vanilla HTML frontend"
+git remote add origin https://github.com/your-username/pricehunt-autonomous-voucher-agent.git
+git push -u origin main
+```
+
+### Step 2 — create a Render Blueprint
+
+Go to https://render.com → New → Blueprint → connect your GitHub repo.
+Render reads `render.yaml` and creates all three services automatically.
+
+### Step 3 — add your secret API keys
+
+Render will pause and ask you to fill in the keys marked `sync: false`.
+Enter them one by one in the Render dashboard:
+
+```
+ANTHROPIC_API_KEY   → your sk-ant-... key
+BRAVE_API_KEY       → your BSA... key
+REDDIT_CLIENT_ID    → from reddit.com/prefs/apps
+REDDIT_CLIENT_SECRET
+RAKUTEN_API_KEY     → optional, for cashback
+```
+
+Click **Apply** — Render deploys both services and the Redis instance.
+
+### Step 4 — done
+
+Render gives you two URLs. Open the frontend URL in a browser.
+The health check in `index.html` pings the backend on load and shows
+"⚡ Agent online" in the header when everything is connected.
+
+---
+
+## render.yaml explained line by line
 
 ```yaml
 services:
+
+  # ── Backend: Python web service ───────────────────────────────────────────
   - type: web
     name: pricehunt-backend
     runtime: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt && playwright install chromium
+    rootDir: backend          # Render looks for requirements.txt here
+    buildCommand: >
+      pip install -r requirements.txt &&
+      playwright install chromium
+      # Installs Python deps then downloads the Chromium browser binary
+      # needed by the Playwright checkout validator
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+      # $PORT is injected by Render — never hardcode a port number
     envVars:
       - key: ANTHROPIC_API_KEY
-        sync: false
+        sync: false           # "sync: false" = you type this in the dashboard
       - key: BRAVE_API_KEY
         sync: false
       - key: REDDIT_CLIENT_ID
@@ -685,34 +885,49 @@ services:
       - key: REDDIT_CLIENT_SECRET
         sync: false
       - key: REDIS_URL
-        fromService:
-          name: pricehunt-redis
+        fromService:          # Render wires this automatically from the
+          name: pricehunt-redis   # Redis instance below — no copy-paste needed
           property: connectionString
 
+  # ── Frontend: static site (plain HTML) ────────────────────────────────────
   - type: static
     name: pricehunt-frontend
     rootDir: frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-    envVars:
-      - key: VITE_API_URL
-        fromService:
-          name: pricehunt-backend
-          property: host
+    buildCommand: >
+      sed -i "s|http://localhost:8000|https://pricehunt-backend.onrender.com|g" index.html
+      # This is the entire "build" step.
+      # It replaces the localhost URL in index.html with the real backend URL.
+      # No npm, no node_modules, no compilation — one sed command.
+    staticPublishPath: .      # serve the folder as-is after the sed command
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache       # always serve fresh HTML (important for an agent app)
 
+  # ── Redis: free 25MB instance ─────────────────────────────────────────────
   - type: redis
     name: pricehunt-redis
-    plan: free
+    plan: free                # 25MB — enough for code cache + agent memory
+    maxmemoryPolicy: allkeys-lru   # evict oldest keys when full
 ```
+
+### Why `sed` instead of a build tool
+
+The only thing that differs between local and production is one URL string.
+Using `sed` to swap it at deploy time is simpler than setting up a bundler,
+environment variables in JavaScript, or a build pipeline.
+
+`sed -i "s|OLD|NEW|g" file` replaces every occurrence of OLD with NEW
+in-place (`-i`) in the file. One command, zero dependencies.
 
 ---
 
 ## Built with
 
 - **[LangGraph](https://langchain-ai.github.io/langgraph/)** — stateful agent graph with reflection loop
-- **[Claude](https://anthropic.com)** — Sonnet 4 for planning/reflection, Haiku for extraction
+- **[Claude](https://anthropic.com)** — Sonnet 4 throughout: planning, reflection, and extraction
 - **[MCP](https://modelcontextprotocol.io)** — each tool is an independent MCP server
 - **[Playwright](https://playwright.dev)** — headless browser for checkout validation
 - **[FastAPI](https://fastapi.tiangolo.com)** — async Python backend
-- **[React + Vite](https://vitejs.dev)** — frontend
+- **[Vanilla HTML/CSS/JS](https://developer.mozilla.org/en-US/docs/Web/HTML)** — frontend (no framework, no build step)
 - **[Render](https://render.com)** — deployment

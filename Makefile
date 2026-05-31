@@ -1,3 +1,8 @@
+# ── OS note ───────────────────────────────────────────────────────────────────
+# This Makefile works on Linux, macOS, and Windows WSL2.
+# Windows native (cmd / PowerShell): run commands manually — see README.md.
+# WSL2 is strongly recommended on Windows: wsl --install (PowerShell as admin)
+
 .PHONY: setup setup-backend setup-frontend dev backend frontend test lint clean help
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -12,22 +17,46 @@ help:
 	@echo ""
 	@echo "  Pricehunt — dev commands"
 	@echo ""
-	@echo "  make setup       Create venv, install all deps, install Chromium"
-	@echo "  make dev         Start backend + frontend in parallel"
-	@echo "  make backend     Start backend only (port 8000)"
-	@echo "  make frontend    Start frontend only (port 5173)"
-	@echo "  make test        Run pytest inside the venv"
-	@echo "  make lint        Run ruff linter on backend"
-	@echo "  make clean       Remove .venv and node_modules"
+	@echo "  make setup        Create venv, install Python deps, install Chromium"
+	@echo "  make redis-start  Start Redis (auto-detects Linux / macOS / WSL2)"
+	@echo "  make redis-check  Verify Redis is reachable"
+	@echo "  make backend      Start FastAPI on port 8000"
+	@echo "  make test         Run pytest inside the venv"
+	@echo "  make lint         Run ruff linter on backend"
+	@echo "  make clean        Remove .venv"
+	@echo ""
+	@echo "  Frontend: cd frontend && python3 -m http.server 5173"
+	@echo "  (no npm needed — plain HTML file)"
 	@echo ""
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 setup: setup-backend setup-frontend
 	@echo ""
 	@echo "✅  Setup complete."
-	@echo "    Copy backend/.env.example → backend/.env and fill in your API keys."
-	@echo "    Then run: make dev"
+	@echo "    1. Start Redis:       make redis-start"
+	@echo "    2. Fill in API keys:  edit backend/.env"
+	@echo "    3. Start servers:     make dev"
 	@echo ""
+
+# ── Redis helpers ─────────────────────────────────────────────────────────────
+redis-start:
+	@echo "→ Starting Redis..."
+	@if command -v systemctl >/dev/null 2>&1; then \
+		sudo systemctl start redis-server && echo "✅  Redis started via systemctl"; \
+	elif command -v service >/dev/null 2>&1; then \
+		sudo service redis-server start && echo "✅  Redis started via service (WSL2)"; \
+	elif command -v brew >/dev/null 2>&1; then \
+		brew services start redis && echo "✅  Redis started via Homebrew"; \
+	elif command -v redis-server >/dev/null 2>&1; then \
+		redis-server --daemonize yes && echo "✅  Redis started as daemon"; \
+	else \
+		echo "❌  Redis not found. See README.md for install instructions."; \
+		exit 1; \
+	fi
+
+redis-check:
+	@redis-cli ping 2>/dev/null && echo "✅  Redis is running" || echo "❌  Redis not reachable — run: make redis-start"
+
 
 setup-backend:
 	@echo "→ Creating Python virtual environment..."
@@ -42,24 +71,22 @@ setup-backend:
 		echo "→ Created backend/.env from .env.example — fill in your API keys"; \
 	fi
 
-setup-frontend:
-	@echo "→ Installing frontend dependencies..."
-	cd frontend && npm install
-	@if [ ! -f frontend/.env ]; then \
-		cp frontend/.env.example frontend/.env; \
-		echo "→ Created frontend/.env from .env.example"; \
-	fi
+# Frontend needs no setup — it is a plain HTML file.
+# Serve locally with: cd frontend && python3 -m http.server 5173
 
 # ── Dev servers ───────────────────────────────────────────────────────────────
 dev:
 	@echo "→ Starting backend on :8000 and frontend on :5173"
 	@$(MAKE) backend & $(MAKE) frontend
+	@echo "   Backend: http://localhost:8000"
+	@echo "   Frontend: http://localhost:5173 (plain HTML — no npm)"
 
 backend:
 	cd backend && ../$(UVICORN) main:app --reload --port 8000
 
 frontend:
-	cd frontend && npm run dev
+	@echo "→ Serving frontend on http://localhost:5173"
+	cd frontend && python3 -m http.server 5173
 
 # ── Test ──────────────────────────────────────────────────────────────────────
 test:
@@ -73,6 +100,4 @@ lint:
 clean:
 	@echo "→ Removing virtual environment..."
 	rm -rf $(VENV)
-	@echo "→ Removing frontend node_modules..."
-	rm -rf frontend/node_modules
 	@echo "✅  Clean complete. Run make setup to start fresh."

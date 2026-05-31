@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Pricehunt — Autonomous Voucher Agent</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,700;0,800;0,900;1,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
+
+*{box-sizing:border-box;margin:0;padding:0;}
+
+:root{
+  --green:#4ade80;
+  --green-dark:#16a34a;
+  --green-deep:#052e16;
+  --green-pale:#f0fdf4;
+  --black:#0d0d0d;
+  --white:#ffffff;
+  --gray-1:#f4f4f0;
+  --gray-2:#e8e8e4;
+  --gray-3:#aaa;
+  --border:2.5px solid var(--black);
+  --radius-sm:10px;
+  --radius-md:16px;
+  --radius-lg:22px;
+  --radius-xl:28px;
+}
+
+body{
+  font-family:'Nunito',sans-serif;
+  background:var(--gray-1);
+  min-height:100vh;
+  padding:20px 16px 60px;
+}
+
+/* ── Layout ── */
+.layout{
+  max-width:900px;
+  margin:0 auto;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+  align-items:start;
+}
+@media(max-width:680px){
+  .layout{grid-template-columns:1fr;}
+}
+
+/* ── Header ── */
+.header{
+  grid-column:1/-1;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 4px 16px;
+  border-bottom:2px solid var(--black);
+  margin-bottom:4px;
+}
+.header-left{display:flex;align-items:center;gap:10px;}
+.logo-bolt{
+  width:36px;height:36px;
+  background:var(--black);
+  border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+}
+.logo-bolt svg{width:18px;height:20px;}
+.logo-text{font-size:22px;font-weight:900;color:var(--black);letter-spacing:-0.5px;}
+.logo-sub{font-size:10px;font-weight:900;color:var(--gray-3);text-transform:uppercase;letter-spacing:.07em;margin-top:-3px;}
+.header-tag{
+  background:var(--green);
+  border:2px solid var(--black);
+  border-radius:20px;
+  padding:5px 13px;
+  font-size:11px;font-weight:900;color:var(--black);
+}
+
+/* ── Left column: App ── */
+.app-col{
+  background:var(--white);
+  border:var(--border);
+  border-radius:var(--radius-xl);
+  overflow:hidden;
+}
+
+.app-nav{
+  background:var(--green);
+  border-bottom:var(--border);
+  padding:14px 18px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.nav-brand{display:flex;align-items:center;gap:9px;}
+.nav-bolt{width:28px;height:28px;background:var(--black);border-radius:7px;display:flex;align-items:center;justify-content:center;}
+.nav-bolt svg{width:13px;height:15px;}
+.nav-name{font-size:17px;font-weight:900;color:var(--black);}
+.nav-actions{display:flex;gap:4px;}
+.nav-btn{width:32px;height:32px;background:rgba(0,0,0,.08);border:none;border-radius:8px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;}
+.nav-btn:hover{background:rgba(0,0,0,.15);}
+
+.app-hero{
+  background:var(--green);
+  border-bottom:var(--border);
+  padding:4px 18px 16px;
+}
+.hero-eyebrow{font-size:9px;font-weight:900;color:var(--green-deep);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;}
+.hero-title{font-size:20px;font-weight:900;color:var(--black);line-height:1.2;margin-bottom:12px;}
+
+.search-box{
+  display:flex;align-items:center;gap:8px;
+  background:var(--white);
+  border:var(--border);
+  border-radius:12px;
+  padding:9px 12px;
+}
+.search-box input{
+  flex:1;border:none;outline:none;
+  font-family:'Nunito',sans-serif;
+  font-size:13px;font-weight:700;
+  color:var(--black);background:transparent;
+}
+.search-box input::placeholder{color:var(--gray-3);}
+.search-go{
+  background:var(--black);border:none;border-radius:8px;
+  width:28px;height:28px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;color:var(--green);
+  font-family:'Nunito',sans-serif;font-weight:900;
+  transition:background .15s;
+}
+.search-go:hover{background:#333;}
+
+.app-body{background:var(--gray-1);padding:12px;}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px;}
+.stat{
+  background:var(--white);
+  border:2px solid var(--black);
+  border-radius:12px;
+  padding:10px 8px;text-align:center;
+}
+.stat-n{font-size:20px;font-weight:900;color:var(--black);}
+.stat-l{font-size:9px;font-weight:900;color:var(--gray-3);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;}
+
+.sec-label{font-size:9px;font-weight:900;color:var(--black);text-transform:uppercase;letter-spacing:.09em;margin:0 0 8px;}
+
+.card{
+  background:var(--white);
+  border:2px solid var(--black);
+  border-radius:var(--radius-md);
+  margin-bottom:10px;
+  overflow:hidden;
+}
+.card-head{display:flex;align-items:center;gap:10px;padding:12px 14px 10px;}
+.m-icon{
+  width:42px;height:42px;
+  border-radius:10px;border:2px solid var(--black);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:900;flex-shrink:0;
+}
+.card-meta{flex:1;}
+.card-name{font-size:13px;font-weight:900;color:var(--black);}
+.card-sub{font-size:10px;font-weight:700;color:var(--gray-3);margin-top:1px;}
+.bonial-chip{
+  display:inline-block;
+  background:#fef9c3;border:1.5px solid #ca8a04;
+  border-radius:6px;padding:1px 6px;
+  font-size:9px;font-weight:900;color:#854d0e;margin-top:3px;
+}
+.savings{
+  background:var(--green);border:2px solid var(--black);
+  border-radius:20px;padding:4px 11px;
+  font-size:12px;font-weight:900;color:var(--black);white-space:nowrap;
+}
+.divider{border:none;border-top:2px solid var(--black);}
+.code-row{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;}
+.code-left{display:flex;align-items:center;gap:6px;}
+.best{background:var(--black);color:var(--green);font-size:8px;font-weight:900;padding:2px 6px;border-radius:4px;text-transform:uppercase;}
+.code{
+  font-family:'DM Mono',monospace;
+  font-size:12px;font-weight:500;color:var(--black);
+  background:var(--gray-1);border:2px solid var(--black);
+  padding:3px 8px;border-radius:6px;letter-spacing:.06em;
+}
+.code-dim{
+  font-family:'DM Mono',monospace;
+  font-size:11px;font-weight:500;color:var(--gray-3);
+  background:var(--gray-1);border:1.5px dashed var(--gray-2);
+  padding:3px 8px;border-radius:6px;
+}
+.copy{
+  background:var(--white);border:2px solid var(--black);
+  border-radius:8px;padding:4px 10px;
+  font-family:'Nunito',sans-serif;font-size:11px;font-weight:900;
+  color:var(--black);cursor:pointer;transition:background .15s;
+}
+.copy:hover,.copy.done{background:var(--green);}
+.apply{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  width:calc(100% - 28px);margin:3px 14px 12px;
+  background:var(--black);color:var(--white);
+  border:none;border-radius:12px;padding:12px;
+  font-family:'Nunito',sans-serif;font-size:13px;font-weight:900;
+  cursor:pointer;transition:all .2s;
+}
+.apply:hover{background:var(--green);color:var(--black);}
+
+.bot-tab{
+  background:var(--white);border-top:var(--border);
+  display:flex;
+}
+.btab{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  gap:2px;padding:10px 0 8px;cursor:pointer;
+  color:var(--gray-3);font-size:8px;font-weight:900;
+  text-transform:uppercase;letter-spacing:.04em;transition:color .15s;
+}
+.btab span{font-size:19px;}
+.btab.on{color:var(--black);}
+
+/* ── Right column: Chat ── */
+.chat-col{
+  background:var(--white);
+  border:var(--border);
+  border-radius:var(--radius-xl);
+  overflow:hidden;
+  display:flex;flex-direction:column;
+}
+
+.chat-header{
+  background:var(--black);
+  padding:14px 18px;
+  display:flex;align-items:center;justify-content:space-between;
+  border-bottom:var(--border);
+}
+.chat-header-left{display:flex;align-items:center;gap:10px;}
+.chat-avatar{
+  width:34px;height:34px;background:var(--green);
+  border-radius:50%;border:2px solid var(--green);
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;
+}
+.chat-title{font-size:14px;font-weight:900;color:var(--white);}
+.chat-status{font-size:10px;font-weight:700;color:var(--green);margin-top:1px;}
+.status-dot{
+  display:inline-block;width:7px;height:7px;
+  background:var(--green);border-radius:50%;margin-right:4px;
+  animation:pulse 2s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+.chat-clear{
+  background:rgba(255,255,255,.1);border:none;border-radius:8px;
+  padding:5px 10px;font-family:'Nunito',sans-serif;
+  font-size:11px;font-weight:900;color:rgba(255,255,255,.6);
+  cursor:pointer;
+}
+.chat-clear:hover{background:rgba(255,255,255,.2);color:var(--white);}
+
+.chat-msgs{
+  flex:1;padding:14px;
+  display:flex;flex-direction:column;gap:10px;
+  min-height:340px;max-height:440px;
+  overflow-y:auto;
+  scrollbar-width:thin;
+}
+.chat-msgs::-webkit-scrollbar{width:4px;}
+.chat-msgs::-webkit-scrollbar-track{background:var(--gray-1);}
+.chat-msgs::-webkit-scrollbar-thumb{background:var(--gray-2);border-radius:4px;}
+
+.msg{
+  max-width:86%;
+  padding:10px 13px;
+  border-radius:14px;
+  font-size:13px;font-weight:700;
+  line-height:1.55;
+  animation:msgIn .2s ease-out;
+}
+@keyframes msgIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+.msg.agent{
+  background:var(--green-pale);
+  border:2px solid var(--green);
+  align-self:flex-start;color:#14532d;
+}
+.msg.agent .lbl{
+  font-size:9px;font-weight:900;color:var(--green-dark);
+  text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;
+}
+.msg.user{
+  background:var(--black);color:var(--green);
+  align-self:flex-end;
+  border:2px solid var(--black);
+}
+.msg .chip{
+  display:inline-block;
+  font-family:'DM Mono',monospace;
+  font-size:11px;background:var(--white);
+  border:1.5px solid var(--green);
+  border-radius:6px;padding:2px 7px;color:var(--black);
+  margin:3px 3px 0 0;
+}
+.msg .save{font-size:14px;font-weight:900;color:var(--black);}
+.msg.typing{
+  background:var(--gray-1);border:2px solid var(--gray-2);
+  align-self:flex-start;color:var(--gray-3);
+  font-style:italic;
+}
+.typing-dots{display:inline-flex;gap:3px;vertical-align:middle;}
+.typing-dots span{
+  width:5px;height:5px;background:var(--gray-3);border-radius:50%;
+  animation:dot .9s ease-in-out infinite;
+}
+.typing-dots span:nth-child(2){animation-delay:.2s;}
+.typing-dots span:nth-child(3){animation-delay:.4s;}
+@keyframes dot{0%,60%,100%{transform:translateY(0);}30%{transform:translateY(-5px);}}
+
+/* Quick replies */
+.quick-wrap{
+  padding:0 14px 10px;
+  display:flex;flex-wrap:wrap;gap:5px;
+}
+.qr{
+  font-size:11px;font-weight:900;
+  padding:5px 11px;border-radius:20px;
+  border:2px solid var(--black);
+  background:var(--white);color:var(--black);
+  cursor:pointer;transition:all .15s;white-space:nowrap;
+}
+.qr:hover{background:var(--green);border-color:var(--green);}
+
+/* Chat input */
+.chat-input{
+  border-top:var(--border);
+  padding:12px;
+  background:var(--gray-1);
+}
+.input-row{
+  display:flex;align-items:center;gap:8px;
+  background:var(--white);
+  border:2px solid var(--black);
+  border-radius:14px;
+  padding:8px 8px 8px 14px;
+}
+.input-row input{
+  flex:1;border:none;outline:none;
+  font-family:'Nunito',sans-serif;
+  font-size:13px;font-weight:700;
+  color:var(--black);background:transparent;
+}
+.input-row input::placeholder{color:var(--gray-3);}
+.send-btn{
+  background:var(--black);color:var(--green);
+  border:none;border-radius:10px;
+  width:34px;height:34px;
+  font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .15s;flex-shrink:0;
+}
+.send-btn:hover{background:var(--green-dark);}
+.send-btn:disabled{background:var(--gray-2);color:var(--gray-3);cursor:not-allowed;}
+
+.input-hint{
+  font-size:10px;font-weight:700;color:var(--gray-3);
+  text-align:center;margin-top:8px;
+}
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <div class="logo-bolt">
+        <svg viewBox="0 0 18 20" fill="none">
+          <path d="M10 1L1 12h7L6 19l11-11h-7L10 1z" fill="#4ade80" stroke="#4ade80" stroke-width="0.3" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <div class="logo-text">Pricehunt</div>
+        <div class="logo-sub">Autonomous voucher agent</div>
+      </div>
+    </div>
+    <div class="header-tag">⚡ Agent online</div>
+  </div>
+
+  <!-- LEFT: APP -->
+  <div class="app-col">
+    <div class="app-nav">
+      <div class="nav-brand">
+        <div class="nav-bolt">
+          <svg viewBox="0 0 18 20" fill="none">
+            <path d="M10 1L1 12h7L6 19l11-11h-7L10 1z" fill="#4ade80" stroke="#4ade80" stroke-width="0.3" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <span class="nav-name">Pricehunt</span>
+      </div>
+      <div class="nav-actions">
+        <button class="nav-btn">🔔</button>
+        <button class="nav-btn">👤</button>
+      </div>
+    </div>
+
+    <div class="app-hero">
+      <div style="height:12px;"></div>
+      <div class="hero-eyebrow">Autonomous deal agent</div>
+      <div class="hero-title">Hunt the price.<br>Keep the savings.</div>
+      <div class="search-box">
+        <span style="font-size:15px;">🔍</span>
+        <input type="text" placeholder="Paste checkout URL or merchant..." id="url-input"/>
+        <button class="search-go" onclick="triggerSearch()">↵</button>
+      </div>
+    </div>
+
+    <div class="app-body">
+      <div class="stats">
+        <div class="stat"><div class="stat-n">€47</div><div class="stat-l">saved today</div></div>
+        <div class="stat"><div class="stat-n">12</div><div class="stat-l">codes found</div></div>
+        <div class="stat"><div class="stat-n">3</div><div class="stat-l">merchants</div></div>
+      </div>
+
+      <div class="sec-label">Best codes found</div>
+
+      <!-- Results rendered here by renderResults() after API call -->
+      <div id="results-area">
+        <div style="padding:36px 20px;text-align:center;">
+          <div style="font-size:32px;margin-bottom:8px;">🎯</div>
+          <div style="font-size:14px;font-weight:900;color:var(--black);margin-bottom:4px;">No hunts yet</div>
+          <div style="font-size:12px;font-weight:700;color:#aaa;">Paste a merchant URL or name above and hit ↵</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="bot-tab">
+      <div class="btab on"><span>🎫</span>Codes</div>
+      <div class="btab"><span>%</span>Cashback</div>
+      <div class="btab"><span>❤️</span>Saved</div>
+      <div class="btab"><span>👤</span>Profile</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: CHAT -->
+  <div class="chat-col">
+    <div class="chat-header">
+      <div class="chat-header-left">
+        <div class="chat-avatar">⚡</div>
+        <div>
+          <div class="chat-title">Pricehunt Agent</div>
+          <div class="chat-status"><span class="status-dot"></span>Ready to hunt deals</div>
+        </div>
+      </div>
+      <button class="chat-clear" onclick="clearChat()">Clear</button>
+    </div>
+
+    <div class="chat-msgs" id="chat-msgs">
+      <div class="msg agent">
+        <div class="lbl">Pricehunt Agent</div>
+        Hey! 👋 I'm your autonomous deal-hunting agent. Paste a merchant URL or name in the search box — or just tell me what you're shopping for and I'll find the best codes.<br><br>
+        You can also ask me things like:<br>
+        <em>"Find codes for Nike over €10"</em><br>
+        <em>"Why did this code expire?"</em><br>
+        <em>"Search Reddit for fresh Zalando codes"</em>
+      </div>
+    </div>
+
+    <div class="quick-wrap" id="quick-replies">
+      <div class="qr" onclick="sendQuick('Find codes for Nike')">Nike codes</div>
+      <div class="qr" onclick="sendQuick('Only show savings over €10')">Filter &gt;€10</div>
+      <div class="qr" onclick="sendQuick('Search Reddit for fresh Zalando codes')">Reddit search</div>
+      <div class="qr" onclick="sendQuick('Why did WELCOME10 not give more?')">Why only €10?</div>
+      <div class="qr" onclick="sendQuick('What is the best code right now?')">Best code?</div>
+      <div class="qr" onclick="sendQuick('Try H&M instead')">Try H&M</div>
+      <div class="qr" onclick="sendQuick('Show me Bonial deals near Frankfurt')">Bonial deals</div>
+      <div class="qr" onclick="sendQuick('How does the agent work?')">How it works</div>
+    </div>
+
+    <div class="chat-input">
+      <div class="input-row">
+        <input
+          type="text"
+          id="chat-in"
+          placeholder="Ask the agent anything, or describe what you need..."
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg();}"
+        />
+        <button class="send-btn" id="send-btn" onclick="sendMsg()">↑</button>
+      </div>
+      <div class="input-hint">⚡ Autonomous agent · finds, validates &amp; ranks codes in real time</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Tab switching ──
+document.querySelectorAll('.btab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.btab').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+  });
+});
+
+// ── Copy button ──
+// ── Tab switching ──
+document.querySelectorAll('.btab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.btab').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFIG
+// In development: set BACKEND to your local FastAPI URL
+// In production:  Render injects the real URL at build time via render.yaml
+// ═══════════════════════════════════════════════════════════════════════════
+const BACKEND = window.__BACKEND_URL__ || 'http://localhost:8000';
+
+// ── Conversation history (sent to /chat on every turn) ─────────────────────
+let chatHistory = [];
+let currentMerchant = null;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API CALLS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// POST /vouchers — run the full autonomous agent for a merchant
+async function findVouchers(merchantUrl) {
+  const res = await fetch(`${BACKEND}/vouchers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ merchant_url: merchantUrl, max_codes: 5 }),
+  });
+  if (!res.ok) throw new Error(`Agent error ${res.status}`);
+  return res.json();
+}
+
+// POST /chat — human-in-the-loop turn with full history
+async function postChat(message) {
+  const res = await fetch(`${BACKEND}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message,
+      history: chatHistory,
+      merchant_context: currentMerchant,
+    }),
+  });
+  if (!res.ok) throw new Error(`Chat error ${res.status}`);
+  return res.json();
+}
+
+// GET /health — check backend is up on page load
+async function checkHealth() {
+  try {
+    const res = await fetch(`${BACKEND}/health`);
+    return res.ok;
+  } catch { return false; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RENDER RESULTS
+// Takes a SearchResponse from the backend and builds the voucher card HTML
+// ═══════════════════════════════════════════════════════════════════════════
+function renderResults(data) {
+  currentMerchant = data.merchant;
+
+  // Update stats
+  const saving = data.codes?.[0]?.saving_eur || 0;
+  if (saving > 0) {
+    const savedEl = document.querySelector('.stat-n');
+    if (savedEl) savedEl.textContent = `€${Math.round(saving)}`;
+  }
+
+  // Build card HTML
+  const initials = data.merchant.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+  const best = data.codes?.[0];
+
+  if (!data.codes?.length) {
+    document.getElementById('results-area').innerHTML = `
+      <div class="card">
+        <div class="card-head">
+          <div class="m-icon" style="background:var(--green);">${initials}</div>
+          <div class="card-meta">
+            <div class="card-name">${data.merchant}</div>
+            <div class="card-sub">No valid codes found this run</div>
+          </div>
+        </div>
+        <div style="padding:10px 16px 14px;font-size:12px;font-weight:700;color:#888;font-style:italic;">
+          🧠 ${data.agent_reasoning || 'Agent searched all sources — no codes available right now.'}
+        </div>
+      </div>`;
+    return;
+  }
+
+  const codeRows = data.codes.map((c, i) => `
+    <div class="code-row" ${i > 0 ? 'style="padding-top:0;padding-bottom:7px;"' : ''}>
+      <div class="code-left">
+        ${i === 0 ? '<span class="best">Best</span>' : ''}
+        <span class="${i === 0 ? 'code' : 'code-dim'}">${c.code}</span>
+        <span style="font-size:10px;color:#aaa;font-weight:700;">${Math.round(c.confidence*100)}%</span>
+      </div>
+      <button class="copy" onclick="doCopy(this,'${c.code}')">📋 Copy</button>
+    </div>`).join('');
+
+  const bonialStrip = data.bonial_deal ? `
+    <div style="background:#fffbeb;border-top:2px solid var(--black);padding:9px 15px;display:flex;align-items:center;gap:8px;font-size:11px;font-weight:900;color:#854d0e;">
+      <span>📰</span>
+      <span>${data.bonial_deal}</span>
+      <div style="background:#fbbf24;border:1.5px solid var(--black);border-radius:6px;padding:2px 8px;font-size:9px;font-weight:900;color:#111;margin-left:auto;">kaufDA</div>
+    </div>` : '';
+
+  const reasoning = data.agent_reasoning ? `
+    <div style="padding:4px 15px 12px;">
+      <button style="background:none;border:none;font-size:11px;font-weight:900;color:var(--green-dark);text-decoration:underline;cursor:pointer;"
+        onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.textContent.includes('Hide')?'🧠 How the agent found this':'🧠 Hide';">
+        🧠 How the agent found this
+      </button>
+      <div style="display:none;margin-top:6px;font-size:11px;font-weight:700;color:#888;line-height:1.5;background:var(--gray-1);border-radius:8px;padding:8px 10px;">
+        ${data.agent_reasoning}
+      </div>
+    </div>` : '';
+
+  document.getElementById('results-area').innerHTML = `
+    <div class="card">
+      <div class="card-head">
+        <div class="m-icon" style="background:var(--green);">${initials}</div>
+        <div class="card-meta">
+          <div class="card-name">${data.merchant}</div>
+          <div class="card-sub">${data.codes.length} code${data.codes.length > 1 ? 's' : ''} found · ${data.cached ? '⚡ cached · ' : ''}${(data.latency_ms/1000).toFixed(1)}s</div>
+          ${data.bonial_deal ? `<div class="bonial-chip">📰 Bonial: ${data.bonial_deal}</div>` : ''}
+        </div>
+        <div class="savings">–€${Math.round(best.saving_eur)}</div>
+      </div>
+      <hr class="divider"/>
+      ${codeRows}
+      <button class="apply" onclick="doApply(this,'€${Math.round(best.saving_eur)}','${best.code}')">⚡ Auto-apply best code</button>
+      ${bonialStrip}
+      ${reasoning}
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEARCH — wired to the hero search box
+// ═══════════════════════════════════════════════════════════════════════════
+async function triggerSearch() {
+  const val = document.getElementById('url-input').value.trim();
+  if (!val) return;
+
+  // Show agent thinking status
+  setAgentStatus('🧠 Planning which sources to use...');
+  document.getElementById('url-input').value = '';
+  document.getElementById('results-area').innerHTML = `
+    <div style="padding:30px;text-align:center;font-size:13px;font-weight:700;color:#888;">
+      <div style="font-size:28px;margin-bottom:8px;">⚡</div>
+      Agent hunting codes for <strong>${val}</strong>...
+    </div>`;
+
+  // Also push search into chat so user sees it there too
+  addUserMsg(`Find the best voucher codes for: ${val}`);
+  addTyping();
+
+  try {
+    const data = await findVouchers(val);
+    renderResults(data);
+    setAgentStatus('');
+
+    // Push result summary into chat
+    const summary = data.codes?.length
+      ? `Found <strong>${data.codes.length} code${data.codes.length > 1 ? 's' : ''}</strong> for ${data.merchant}:<br>` +
+        data.codes.map((c,i) => `<span class="chip">${c.code}</span> <span class="save">–€${Math.round(c.saving_eur)}</span>`).join('<br>') +
+        `<br><br>Source: ${[...new Set(data.codes.map(c=>c.source))].join(', ')} · ${(data.latency_ms/1000).toFixed(1)}s` +
+        (data.bonial_deal ? `<br>📰 Bonial: ${data.bonial_deal}` : '')
+      : `No valid codes found for ${data.merchant} this run. ${data.agent_reasoning || ''}`;
+
+    // Add to history for /chat context
+    chatHistory.push({ role: 'user', content: `Find codes for ${val}` });
+    chatHistory.push({ role: 'assistant', content: summary });
+
+    addAgentMsg(summary);
+  } catch (err) {
+    setAgentStatus('');
+    addAgentMsg(`❌ ${err.message} — is the backend running?`);
+    document.getElementById('results-area').innerHTML = `
+      <div style="padding:30px;text-align:center;font-size:13px;font-weight:700;color:#ef4444;">
+        ❌ ${err.message}
+      </div>`;
+  }
+}
+
+document.getElementById('url-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') triggerSearch();
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENT STATUS BAR (shows below search box during agent run)
+// ═══════════════════════════════════════════════════════════════════════════
+function setAgentStatus(msg) {
+  let el = document.getElementById('agent-status');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'agent-status';
+    el.style.cssText = 'margin-top:8px;font-size:11px;font-weight:700;color:var(--black);background:rgba(0,0,0,.08);border-radius:8px;padding:5px 10px;';
+    document.querySelector('.app-hero').appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COPY + APPLY
+// ═══════════════════════════════════════════════════════════════════════════
+function doCopy(btn, code) {
+  navigator.clipboard?.writeText(code).catch(()=>{});
+  btn.innerHTML = '✅ Copied!';
+  btn.classList.add('done');
+  setTimeout(() => { btn.innerHTML = '📋 Copy'; btn.classList.remove('done'); }, 2000);
+}
+
+function doApply(btn, saving, code) {
+  const orig = btn.innerHTML;
+  btn.innerHTML = '⏳ Agent applying...';
+  btn.style.background = 'var(--green)'; btn.style.color = 'var(--black)';
+  setTimeout(() => {
+    btn.innerHTML = `✅ Applied! Saved ${saving}`;
+    addAgentMsg(`Done! Applied <strong>${code}</strong> and saved you <strong>${saving}</strong> at checkout. 🎉`);
+    chatHistory.push({ role: 'assistant', content: `Applied ${code}, saved ${saving}` });
+    setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; btn.style.color = ''; }, 3000);
+  }, 1400);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CHAT — wired to real POST /chat
+// ═══════════════════════════════════════════════════════════════════════════
+function addUserMsg(text) {
+  const msgs = document.getElementById('chat-msgs');
+  const el = document.createElement('div');
+  el.className = 'msg user';
+  el.textContent = text;
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addTyping() {
+  const msgs = document.getElementById('chat-msgs');
+  const el = document.createElement('div');
+  el.className = 'msg typing';
+  el.id = 'typing-indicator';
+  el.innerHTML = 'Agent is thinking <span class="typing-dots"><span></span><span></span><span></span></span>';
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addAgentMsg(html) {
+  const typing = document.getElementById('typing-indicator');
+  if (typing) typing.remove();
+  const msgs = document.getElementById('chat-msgs');
+  const el = document.createElement('div');
+  el.className = 'msg agent';
+  el.innerHTML = `<div class="lbl">Pricehunt Agent</div>${html}`;
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function sendQuick(text) {
+  document.getElementById('chat-in').value = text;
+  sendMsg();
+}
+
+async function sendMsg() {
+  const input = document.getElementById('chat-in');
+  const btn   = document.getElementById('send-btn');
+  const text  = input.value.trim();
+  if (!text) return;
+
+  addUserMsg(text);
+  chatHistory.push({ role: 'user', content: text });
+  input.value = '';
+  btn.disabled = true;
+  addTyping();
+
+  try {
+    const data = await postChat(text);
+
+    // If agent ran a re-search and found updated codes, re-render left panel
+    if (data.updated_codes?.length) {
+      renderResults({
+        merchant: currentMerchant || 'Results',
+        codes: data.updated_codes,
+        bonial_deal: null,
+        cached: false,
+        latency_ms: 0,
+        agent_reasoning: data.reply,
+      });
+    }
+
+    addAgentMsg(data.reply);
+    chatHistory.push({ role: 'assistant', content: data.reply });
+  } catch (err) {
+    addAgentMsg(`❌ ${err.message} — is the backend running?`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function clearChat() {
+  document.getElementById('chat-msgs').innerHTML = '';
+  chatHistory = [];
+  addAgentMsg(`Chat cleared. Ready for a new hunt — paste a URL or tell me what you're shopping for! 🎯`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HEALTH CHECK — show agent status on load
+// ═══════════════════════════════════════════════════════════════════════════
+(async () => {
+  const tag = document.querySelector('.header-tag');
+  const ok  = await checkHealth();
+  if (tag) {
+    tag.textContent = ok ? '⚡ Agent online' : '❌ Agent offline';
+    if (!ok) tag.style.cssText = 'background:#fecaca;color:#7f1d1d;border-color:#ef4444;border:2px solid #ef4444;border-radius:20px;padding:5px 13px;font-size:11px;font-weight:900;';
+  }
+  if (!ok) {
+    addAgentMsg(`⚠️ Backend not reachable at <code>${BACKEND}</code>.<br>Start the FastAPI server with <code>uvicorn main:app --reload</code> then refresh.`);
+  }
+})();
+</script>
+</body>
+</html>

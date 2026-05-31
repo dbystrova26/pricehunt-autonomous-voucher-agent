@@ -58,8 +58,9 @@ class AgentState(BaseModel):
 
 # ── LLM instances ──────────────────────────────────────────────────────────────
 
-planner_llm = ChatAnthropic(model="claude-sonnet-4-6", max_tokens=1000)
-haiku_llm   = ChatAnthropic(model="claude-haiku-4-5-20251001", max_tokens=500)
+# Single Sonnet instance used for all LLM calls:
+# planner node, reflection node, code extraction, and chat turns
+llm = ChatAnthropic(model="claude-sonnet-4-6", max_tokens=1000)
 
 
 # ── Node: extract merchant from URL / name ─────────────────────────────────────
@@ -142,7 +143,7 @@ Respond ONLY with valid JSON, no other text:
   "reasoning": "First run, no history. Full parallel fan-out."
 }}"""
 
-    response = await planner_llm.ainvoke(prompt)
+    response = await llm.ainvoke(prompt)
     try:
         plan = json.loads(response.content)
     except json.JSONDecodeError:
@@ -200,10 +201,10 @@ async def run_tools_node(state: AgentState) -> AgentState:
                     snippets.extend(r.get("snippets", []))
                 reddit = await reddit_search(state.merchant)
                 snippets.extend(reddit.get("snippets", []))
-                # Extract codes from raw text with Haiku
+                # Extract codes from raw text with Sonnet
                 if snippets:
                     extracted = await extract_codes_from_text(
-                        "\n".join(snippets), state.merchant, haiku_llm
+                        "\n".join(snippets), state.merchant, llm
                     )
                     codes = extracted
 
@@ -377,7 +378,7 @@ Rules:
 Respond ONLY with JSON:
 {{"decision": "return" | "retry", "reason": "..."}}"""
 
-    response = await haiku_llm.ainvoke(prompt)
+    response = await llm.ainvoke(prompt)
     try:
         parsed = json.loads(response.content)
         state.reflection_decision = parsed.get("decision", "return")
@@ -499,7 +500,7 @@ Respond with valid JSON only:
         messages.append(h)
     messages.append({"role": "user", "content": message})
 
-    response = await planner_llm.ainvoke(messages)
+    response = await llm.ainvoke(messages)
 
     try:
         parsed = json.loads(response.content)
