@@ -1,38 +1,37 @@
-# Virtual environment — never commit
-venv/
+# ── Python virtual environment ────────────────────────────────────────────────
+backend/.venv/
 .venv/
+venv/
 env/
-
-# Environment variables — NEVER commit, contains API keys
-.env
-
-# Python cache
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
-*.pyd
-.Python
+.pytest_cache/
 *.egg-info/
 dist/
 build/
-.eggs/
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
+# ── Environment / secrets ─────────────────────────────────────────────────────
+# NEVER commit .env files — they contain your API keys
+backend/.env
+frontend/.env
+.env
 
-# IDE
+# ── Frontend build ────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── OS cruft ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Editor ────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Pinecone / ML cache
-*.pickle
-*.pkl
-.cache
+# ── Playwright ────────────────────────────────────────────────────────────────
+# Browser binaries are large — install locally with `playwright install chromium`
+backend/.playwright/

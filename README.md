@@ -40,7 +40,7 @@ React UI (Vite)
     │       │            │
 Retailme  Brave API   Redis
 Not,Honey Reddit      Postgres
-Idealo    SerpAPI
+Idealo
             │
          Validator
          MCP server
@@ -52,9 +52,197 @@ Idealo    SerpAPI
 
 ---
 
+## The LangGraph agent — how it is built and how it runs
+
+[LangGraph](https://langchain-ai.github.io/langgraph/) is a framework for building
+stateful, multi-step AI agents as directed graphs. Each node in the graph is a Python
+async function. Edges connect nodes, and conditional edges let the agent branch or loop
+based on what it has found so far.
+
+Pricehunt's graph lives in `backend/agent.py` and has five nodes:
+
+```
+extract_merchant
+      │
+   planner  ◄─────────────────────────┐
+      │                               │ (retry if reflection says so)
+  run_tools                           │
+      │                               │
+  validator                           │
+      │                               │
+ reflection ────────────────────────► END
+```
+
+### Node 1 — `extract_merchant`
+
+Normalises the user's raw input into a clean merchant name.
+
+```python
+async def extract_merchant_node(state: AgentState) -> AgentState:
+    # "https://zalando.de/checkout" → "Zalando"
+    # "about you" → "About You"
+```
+
+This runs first on every call. It strips URL parts, title-cases the name, and stamps
+`start_time` so latency can be measured at the end.
+
+### Node 2 — `planner`
+
+The brain of the agent. Makes a Claude Sonnet API call with a prompt that includes:
+- The merchant name and category
+- The full history from Redis (which sources worked last time, their hit rates)
+- What tools were already tried if this is a retry
+
+It returns a **JSON plan** — not prose, not a decision tree hardcoded by a developer:
+
+```json
+{
+  "tools": ["cache", "scraper", "search"],
+  "parallel": true,
+  "queries": ["Zalando promo code June 2025", "Zalando 20% discount"],
+  "include_bonial": true,
+  "reasoning": "First run, no history. Full parallel fan-out."
+}
+```
+
+This is where autonomy starts: you do not tell the agent which tools to use.
+It reads the situation and decides. On a return visit where the cache has an 80% hit
+rate, it may skip scraping entirely and just check the cache.
+
+### Node 3 — `run_tools`
+
+Executes the plan by calling MCP tool servers. Runs them in parallel or sequence
+depending on the `parallel` flag the planner set.
+
+```python
+async def run_tools_node(state: AgentState) -> AgentState:
+    if parallel:
+        results = await asyncio.gather(*[run_tool(t) for t in tools_to_run])
+    else:
+        for t in tools_to_run:
+            codes.extend(await run_tool(t))
+```
+
+Each `run_tool(name)` call dispatches to the relevant MCP server:
+
+| Tool name | MCP server | What it does |
+|---|---|---|
+| `cache` | cache-mcp-server | Redis lookup — instant, no network cost |
+| `scraper` | scraper-mcp-server | Playwright scrape of RetailMeNot, Honey, Idealo |
+| `search` | search-mcp-server | Brave Search + Reddit, then Haiku extracts codes |
+| `bonial` | bonial-mcp-server | kaufDA weekly leaflet scraper |
+
+After all tools finish, codes are deduplicated by code string and stored in `state.raw_codes`.
+
+### Node 4 — `validator`
+
+The most expensive node. Calls the validator MCP server which uses a headless
+Playwright browser to apply each candidate code to a real checkout and read the price delta.
+
+Before sending codes to the browser, the agent **pre-scores** them with a heuristic
+to avoid wasting browser time on obvious duds:
+
+```python
+def _score_codes(codes, merchant):
+    # Penalise codes with old years (XMAS2022 → -0.40)
+    # Boost codes that appear on multiple sources (+0.20)
+    # Boost codes that contain the merchant name fragment (+0.10)
+    # Returns top N sorted by score
+```
+
+Only the top 5 candidates are sent to Playwright. This keeps total latency under 8 seconds
+even when 20+ raw codes were found.
+
+### Node 5 — `reflection`
+
+After validation, the agent evaluates its own output. This is the self-reflection loop
+that makes Pricehunt an agent rather than a script.
+
+A Claude Haiku call receives the full run context and must respond with a JSON decision:
+
+```json
+{"decision": "return", "reason": "Found 2 valid codes. Best saves €18. Good enough."}
+```
+
+or:
+
+```json
+{"decision": "retry", "reason": "0 codes found. Search tool not tried yet. Retry."}
+```
+
+If the decision is `retry`, LangGraph routes back to the **planner** node — not back to
+the start. The planner receives the retry context, knows what already failed, and writes
+a different plan. Maximum 2 retries before the agent gives up and returns what it has.
+
+### The conditional edge
+
+```python
+def route_after_reflection(state: AgentState) -> str:
+    if state.reflection_decision == "retry":
+        return "planner"   # loop back
+    return END             # finish
+```
+
+This single function is what turns a linear pipeline into a reasoning loop.
+LangGraph calls it after every reflection node execution to decide where to go next.
+
+### State object
+
+All data flows through a single `AgentState` Pydantic model — no global variables,
+no side effects between nodes. Each node receives the state, returns an updated copy,
+and LangGraph handles the rest.
+
+```python
+class AgentState(BaseModel):
+    merchant: str
+    plan: dict                  # written by planner, read by run_tools
+    raw_codes: list[dict]       # written by run_tools, read by validator
+    validated_codes: list[dict] # written by validator, read by reflection
+    retry_count: int            # incremented by reflection on retry
+    tools_used: list[str]       # accumulated across retries
+    reflection_decision: str    # "return" | "retry"
+    bonial_deal: Optional[str]  # enrichment from kaufDA
+    merchant_history: dict      # read from Redis before planner runs
+```
+
+### How a full run flows
+
+```
+User: POST /vouchers {"merchant_url": "zalando.de"}
+
+1. extract_merchant  →  merchant = "Zalando", start_time = now()
+
+2. planner           →  reads Redis: "last 5 runs, RetailMeNot hit rate 80%"
+                        LLM decides: {"tools":["cache","scraper"], "parallel":true}
+
+3. run_tools         →  cache: miss (6h TTL expired)
+                        scraper: RetailMeNot returns [SUMMER18, WELCOME10, FLASH5]
+                        bonial: "Jeans –20% in-store until Sunday"
+
+4. validator         →  pre-scores 3 codes, sends top 3 to Playwright
+                        SUMMER18: valid, saves €18.00 ✅
+                        WELCOME10: valid, saves €10.00 ✅
+                        FLASH5: invalid, code expired ✗
+
+5. reflection        →  "Found 2 valid codes. Best €18. Good enough."
+                        decision = "return"
+
+Response: {"codes":[{"code":"SUMMER18","saving_eur":18.0,...},...], "latency_ms": 4100}
+```
+
+If step 3 had returned 0 codes, reflection would have set `decision = "retry"`,
+the graph would route back to the planner, and the planner would write a new plan
+that includes the `search` tool — which it skipped on the first pass because history
+showed RetailMeNot was reliable. The agent self-corrects without any human intervention.
+
+---
+
 ## Where MCP is used
 
-MCP (Model Context Protocol) is the communication layer between the **LangGraph agent** and each **tool server**. Instead of hardcoding scraping logic inside the agent, each data source runs as an independent MCP server. The agent discovers available tools at startup and calls them by name over JSON-RPC.
+MCP (Model Context Protocol) is the communication layer between the **LangGraph agent**
+and each **tool server**. Instead of hardcoding scraping logic inside the agent, each
+data source runs as an independent MCP server. The agent discovers available tools at
+startup and calls them by name over JSON-RPC.
 
 ```
 agent.py  ──MCP──►  scraper-mcp-server   (scrape_retailmenot, scrape_honey)
@@ -106,8 +294,8 @@ news articles that scraping aggregators like RetailMeNot miss.
 heavily rate-limits free use. Brave offers 2,000 free requests/month, has no Google
 tracking overhead, and returns cleaner structured snippets for code extraction.
 
-**Why not SerpAPI:** SerpAPI costs $50/month minimum. Good for production but
-overkill for a student project. Brave covers the same use case for free.
+**Why not SerpAPI:** SerpAPI costs $50/month minimum. Good for production but overkill
+for an MVP. Brave covers the same use case for free.
 
 **How to get:**
 1. Go to https://api.search.brave.com
@@ -125,8 +313,8 @@ BRAVE_API_KEY=BSA...
 r/frugal, and merchant-specific subreddits for codes that haven't reached aggregators yet.
 
 **Why Reddit:** Reddit is often 24–48 hours ahead of RetailMeNot for fresh codes.
-Users post codes the moment they find them. It's especially powerful for flash sales
-and limited-time codes that expire before scrapers catch up.
+Users post codes the moment they find them. Especially powerful for flash sales and
+limited-time codes that expire before scrapers catch up.
 
 **How to get:**
 1. Go to https://www.reddit.com/prefs/apps
@@ -150,7 +338,7 @@ exclusive promo codes for 2,500+ merchants in the EU and US.
 **Why Rakuten:** Unlike scraping, Rakuten gives you structured data with confirmed
 merchant IDs, exact cashback percentages, and programme terms. It also opens the door
 to a cashback revenue model — if users click through Pricehunt's tracked links, the
-app earns a small commission per purchase, which is exactly how Joko monetises.
+app earns a small commission per purchase.
 
 **Why not Commission Junction or Awin:** Rakuten has the best EU merchant coverage
 for fashion and electronics. Awin is a good alternative for DE-specific merchants.
@@ -175,8 +363,8 @@ built-in anti-bot handling, residential proxies, and CAPTCHA solving.
 Browserbase solves this transparently — the validation MCP server calls Browserbase
 instead of running Playwright locally, and checkout pages see a real browser session.
 
-**Why optional for MVP:** For a demo and student project, local Playwright works fine
-on most merchants. Add Browserbase if you get blocked on specific sites.
+**Why optional for MVP:** Local Playwright works fine on most merchants. Add Browserbase
+if you get blocked on specific sites.
 
 **How to get:**
 1. Go to https://browserbase.com
@@ -197,7 +385,7 @@ BROWSERBASE_PROJECT_ID=prj_...
 
 **Why Redis over Postgres for caching:** Redis is orders of magnitude faster for
 key-value lookups (sub-millisecond). The agent reads merchant history before every
-run — it needs to be instant. Postgres is used for slower historical analytics.
+run — it needs to be instant.
 
 **How to get locally:**
 ```bash
@@ -208,17 +396,14 @@ docker run -p 6379:6379 redis:alpine
 On Render: add the Redis add-on in your dashboard → it injects `REDIS_URL` automatically.
 
 ```
-REDIS_URL=redis://localhost:6379     # local
-# Render sets this automatically in production
+REDIS_URL=redis://localhost:6379
 ```
 
 ---
 
 ### 🐘 PostgreSQL *(auto-configured on Render)*
-**What:** Relational database. Used for:
-- Long-term run history per merchant (beyond Redis TTL)
-- Code success/failure logs for analytics
-- User session data
+**What:** Relational database. Used for long-term run history per merchant, code
+success/failure logs, and user session data.
 
 **How to get locally:**
 ```bash
@@ -230,12 +415,13 @@ On Render: add the Postgres add-on → injects `DATABASE_URL` automatically.
 
 ```
 DATABASE_URL=postgresql://user:pass@localhost:5432/pricehunt
-# Render sets this automatically in production
 ```
 
 ---
 
 ## Full `.env` file
+
+Copy `.env.example` to `.env` and fill in your values:
 
 ```bash
 # ── LLM ──────────────────────────────────────────────────────────
@@ -251,7 +437,7 @@ RAKUTEN_API_KEY=...                      # rakutenadvertising.com (publisher)
 
 # ── Validation browser (optional) ────────────────────────────────
 BROWSERBASE_API_KEY=bb_...               # browserbase.com
-BROWSERBASE_PROJECT_ID=prj_...          # browserbase.com
+BROWSERBASE_PROJECT_ID=prj_...           # browserbase.com
 
 # ── Cache & DB ───────────────────────────────────────────────────
 REDIS_URL=redis://localhost:6379         # Render auto-fills in production
@@ -266,6 +452,107 @@ Priority for getting keys:
 2. `BRAVE_API_KEY` — 2 minutes, free
 3. `REDDIT_CLIENT_ID` + `SECRET` — 5 minutes, free
 4. `RAKUTEN_API_KEY` — apply early, takes 1–2 days for approval
+
+---
+
+## Local setup
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- Redis running locally (or Docker)
+
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/your-username/pricehunt-autonomous-voucher-agent.git
+cd pricehunt-autonomous-voucher-agent
+```
+
+### 2. Backend — Python virtual environment
+
+Always use a virtual environment. This keeps Pricehunt's dependencies isolated from
+your system Python and prevents version conflicts.
+
+```bash
+cd backend
+
+# Create the virtual environment
+python3 -m venv .venv
+
+# Activate it
+source .venv/bin/activate          # macOS / Linux
+# .venv\Scripts\activate           # Windows
+
+# Your prompt should now show (.venv)
+# Install dependencies inside the venv
+pip install -r requirements.txt
+
+# Install Playwright's browser binary (Chromium)
+playwright install chromium
+
+# Copy env file and fill in your API keys
+cp .env.example .env
+```
+
+To deactivate the virtual environment when you're done:
+
+```bash
+deactivate
+```
+
+To reactivate in a new terminal session:
+
+```bash
+cd backend
+source .venv/bin/activate
+```
+
+> **Note:** The `.venv` folder is in `.gitignore` — never commit it.
+> Anyone cloning the repo runs the setup steps above to recreate it locally.
+
+### 3. Start Redis (if not already running)
+
+```bash
+# macOS
+brew services start redis
+
+# Docker (any OS)
+docker run -d -p 6379:6379 --name pricehunt-redis redis:alpine
+```
+
+### 4. Run the backend
+
+```bash
+# Make sure .venv is active
+source backend/.venv/bin/activate
+
+uvicorn main:app --reload --port 8000
+# → http://localhost:8000
+# → http://localhost:8000/docs  (auto-generated API docs)
+```
+
+### 5. Frontend
+
+```bash
+cd frontend
+npm install
+cp .env.example .env          # sets VITE_API_URL=http://localhost:8000
+npm run dev
+# → http://localhost:5173
+```
+
+### 6. Quick start with Make
+
+A `Makefile` at the repo root wraps all of the above:
+
+```bash
+make setup        # create venv, install deps, install Chromium
+make dev          # start backend + frontend in parallel
+make test         # run pytest inside the venv
+make clean        # remove .venv and node_modules
+```
 
 ---
 
@@ -331,9 +618,11 @@ Priority for getting keys:
 ## Project structure
 
 ```
-pricehunt/
+pricehunt-autonomous-voucher-agent/
 ├── README.md
-├── render.yaml
+├── Makefile                         # dev shortcuts
+├── render.yaml                      # one-file Render deployment
+├── .gitignore
 ├── .claude/
 │   ├── skills/
 │   │   ├── voucher-extraction.md    # how to extract codes from raw text
@@ -346,52 +635,39 @@ pricehunt/
 │       ├── code-validator.md        # tool definition: validate_code_at_checkout
 │       └── bonial-deals.md          # tool definition: get_bonial_deals
 ├── backend/
-│   ├── main.py
-│   ├── agent.py
-│   ├── memory.py
-│   ├── requirements.txt
+│   ├── .venv/                       # virtual environment (git-ignored)
+│   ├── .env                         # your secrets (git-ignored)
+│   ├── .env.example                 # template to copy
+│   ├── main.py                      # FastAPI app — all endpoints
+│   ├── agent.py                     # LangGraph graph — all five nodes
+│   ├── memory.py                    # Redis cache + run history
+│   ├── requirements.txt             # pinned Python dependencies
 │   └── tools/
-│       ├── scraper.py
-│       ├── search.py
-│       ├── cache.py
-│       ├── validator.py
-│       └── bonial.py
+│       ├── scraper.py               # MCP scraper server
+│       ├── search.py                # MCP search server
+│       ├── cache.py                 # MCP cache server
+│       ├── validator.py             # MCP validator server
+│       └── bonial.py               # MCP Bonial/kaufDA server
 └── frontend/
+    ├── .env                         # VITE_API_URL (git-ignored)
+    ├── .env.example
     ├── src/
-    │   ├── App.jsx
+    │   ├── App.jsx                  # main layout — search + chat
     │   ├── components/
     │   │   ├── VoucherCard.jsx
     │   │   ├── ChatPanel.jsx
     │   │   └── StatsBar.jsx
-    │   └── api.js
+    │   └── api.js                   # fetch helpers for /vouchers and /chat
     └── package.json
-```
-
----
-
-## Local setup
-
-```bash
-# Backend
-cd backend
-pip install -r requirements.txt
-playwright install chromium
-cp .env.example .env   # fill in your keys
-uvicorn main:app --reload --port 8000
-
-# Frontend
-cd frontend
-npm install
-echo "VITE_API_URL=http://localhost:8000" > .env
-npm run dev
 ```
 
 ---
 
 ## Deploy to Render
 
+Push to GitHub, then create a **Blueprint** deployment using the `render.yaml` at the repo root:
+
 ```yaml
-# render.yaml — place at repo root
 services:
   - type: web
     name: pricehunt-backend
@@ -440,7 +716,3 @@ services:
 - **[FastAPI](https://fastapi.tiangolo.com)** — async Python backend
 - **[React + Vite](https://vitejs.dev)** — frontend
 - **[Render](https://render.com)** — deployment
-
----
-
-*Built for Ironhack final project · Frankfurt 2025*
