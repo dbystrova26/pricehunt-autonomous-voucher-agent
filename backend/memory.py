@@ -140,3 +140,22 @@ async def write_run_result(
         "codes_found": codes_found,
         "best_saving": best_saving,
     })
+
+
+async def get_merchant_stats(merchant: str) -> dict:
+    """
+    Returns merchant history stats for the /merchants/{merchant}/stats endpoint.
+    Alias for get_merchant_history with a friendlier response shape.
+    """
+    key = f"history:{merchant.lower()}"
+    raw = await _rget(key)
+    if raw:
+        data = json.loads(raw)
+        return {
+            "merchant": merchant,
+            "runs": data.get("runs", 0),
+            "best_source": data.get("best_source", "unknown"),
+            "hit_rate": round(data.get("hit_rate", 0.0), 2),
+            "avg_saving": round(data.get("avg_saving", 0.0), 2),
+        }
+    return None
