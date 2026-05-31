@@ -1,7 +1,38 @@
 # Pricehunt 🎯
 ### Autonomous voucher-hunting agent · LangGraph · MCP · Claude · Render
 
-> An autonomous AI agent that scans the web for discount codes, tests them at real checkouts, and returns the best saving — in under 8 seconds.
+> An autonomous AI agent that hunts, scores, and explains discount codes across 5+ sources — in under 8 seconds.
+
+---
+
+## The problem
+
+You're about to checkout on Zalando. You open a new tab, Google "Zalando promo code", land on RetailMeNot, try three codes — two are expired, one gives €2 off. You wasted 4 minutes and still don't know if a better code exists somewhere else.
+
+This is the gap Pricehunt fills.
+
+**Existing solutions don't solve it:**
+
+| Service | How it works | What's missing |
+|---|---|---|
+| **RetailMeNot / Honey** | Static database of user-submitted codes | Codes are often expired. No real-time validation. No explanation of why a code works or doesn't. |
+| **Joko** | Browser extension that auto-applies codes at checkout | Black box — applies codes silently, no transparency on what was tried or why. Static code database, not real-time search. |
+| **Bonial / kaufDA** | Weekly digital leaflets for in-store EU retailers | In-store only. No online codes. No autonomous search. |
+| **Google** | You do all the work | Manual, slow, no validation, no aggregation. |
+
+**Pricehunt is different in three ways:**
+
+**1. Autonomous, not static.**
+Every search triggers a live agent run — scraping aggregators, searching the web via Tavily, checking in-store leaflets via Bonial, and querying its own memory of past runs. No stale database. Results are fresh on every request.
+
+**2. Transparent, not a black box.**
+The agent explains exactly what it found, where it found it, and how confident it is. When a code fails it tells you why. When it's uncertain it says so. You stay in control.
+
+**3. Conversational, not one-shot.**
+After the initial search you can refine in plain language: "only show codes saving more than €15", "search Reddit for fresher codes", "try H&M instead". The agent re-runs tools and updates results without starting over.
+
+> *"Joko does it for you silently.*
+> *Pricehunt shows its work so you stay in control."*
 
 ---
 
@@ -12,7 +43,7 @@ Pricehunt is not a scraper with a UI. It is an **autonomous LangGraph agent** th
 1. **Plans** — reads its own memory to decide which sources to check and in what order
 2. **Hunts** — fans out to scraper, search, and cache MCP tool servers in parallel
 3. **Enriches** — pulls Bonial/kaufDA weekly leaflets for in-store EU promotions
-4. **Validates** — uses a headless Playwright browser to test codes at real checkouts
+4. **Scores** — ranks found codes by confidence using heuristics: source reputation, code age, merchant patterns *(real Playwright checkout validation is the next development milestone — see future development)*
 5. **Reflects** — evaluates its own output and retries with a different plan if needed
 6. **Learns** — writes success rates per merchant to in-memory cache; persists to Redis if available
 7. **Talks** — stays in a chat loop so users can refine results in plain language
@@ -94,7 +125,7 @@ Idealo
             │
          Validator
          MCP server
-         (Playwright)
+         (stub)
             │
          Bonial MCP server
          (kaufDA leaflets)
@@ -178,7 +209,7 @@ Each `run_tool(name)` call dispatches to the relevant MCP server:
 | Tool name | MCP server | What it does |
 |---|---|---|
 | `cache` | cache-mcp-server | Redis lookup — instant, no network cost |
-| `scraper` | scraper-mcp-server | Playwright scrape of RetailMeNot, Honey, Idealo |
+| `scraper` | scraper-mcp-server | Scrapes RetailMeNot, Honey, Idealo *(stub — returns empty list, real scraping is a future milestone)* |
 | `search` | search-mcp-server | Tavily Search + Reddit → Sonnet extracts codes |
 | `bonial` | bonial-mcp-server | kaufDA weekly leaflet scraper |
 
@@ -186,11 +217,7 @@ After all tools finish, codes are deduplicated by code string and stored in `sta
 
 ### Node 4 — `validator`
 
-The most expensive node. Calls the validator MCP server which uses a headless
-Playwright browser to apply each candidate code to a real checkout and read the price delta.
-
-Before sending codes to the browser, the agent **pre-scores** them with a heuristic
-to avoid wasting browser time on obvious duds:
+Scores and filters candidate codes using heuristics before returning results.
 
 ```python
 def _score_codes(codes, merchant):
@@ -200,8 +227,12 @@ def _score_codes(codes, merchant):
     # Returns top N sorted by score
 ```
 
-Only the top 5 candidates are sent to Playwright. This keeps total latency under 8 seconds
-even when 20+ raw codes were found.
+Only the top 5 candidates are returned. The scoring keeps low-confidence codes
+out of results without needing real checkout access.
+
+> **Not yet implemented:** Real Playwright checkout validation — visiting the actual
+> merchant checkout, entering the code, and reading the price delta. This is the most
+> important next milestone. See the future development section for the implementation plan.
 
 ### Node 5 — `reflection`
 
@@ -269,10 +300,11 @@ User: POST /vouchers {"merchant_url": "zalando.de"}
                         scraper: RetailMeNot returns [SUMMER18, WELCOME10, FLASH5]
                         bonial: "Jeans –20% in-store until Sunday"
 
-4. validator         →  pre-scores 3 codes, sends top 3 to Playwright
-                        SUMMER18: valid, saves €18.00 ✅
-                        WELCOME10: valid, saves €10.00 ✅
-                        FLASH5: invalid, code expired ✗
+4. validator         →  scores 3 codes by heuristics (source, age, patterns)
+                        SUMMER18: confidence 0.85, estimated €18 saving ✅
+                        WELCOME10: confidence 0.72, estimated €10 saving ✅
+                        FLASH5: confidence 0.05, old year in code — filtered out ✗
+                        *(future: real Playwright checkout confirms actual saving)*
 
 5. reflection        →  "Found 2 valid codes. Best €18. Good enough."
                         decision = "return"
@@ -317,7 +349,7 @@ See `.claude/tools/` for the tool definition files and `.claude/skills/` for the
 
 > **TL;DR — you only need 2 keys to run Pricehunt.**
 > Scraping (RetailMeNot, Honey, Idealo, Bonial) requires no API keys at all —
-> it is plain Playwright loading public web pages. The only keys needed are the
+> scraper stubs are in place, real HTML parsing is a future milestone. The only keys needed are the
 > LLM brain and the web search layer.
 
 ---
@@ -445,8 +477,8 @@ BROWSERBASE_PROJECT_ID=prj_...
 ```
 
 **⚠️ Limitation encountered:** Not needed for most merchants during development.
-Local Playwright worked on Zalando, About You, H&M. Add Browserbase only if
-you see `error: "blocked"` responses from the validator on specific sites.
+Playwright checkout validation is a future milestone. Once implemented, add Browserbase
+if specific merchant checkouts block the headless browser.
 Usage-based pricing — cost scales with number of validations.
 
 ---
@@ -592,8 +624,8 @@ FRONTEND_URL=http://localhost:5173       # Render auto-fills in production
 ```
 
 > **Note on scraping:** RetailMeNot, Honey, Idealo, and Bonial/kaufDA are scraped
-> directly using Playwright — no API key required. These are public websites.
-> The agent loads them like a browser and parses the HTML.
+> directly — no API key required. These are public websites.
+> Scraper stubs are in place; real Playwright HTML parsing is a future milestone.
 
 ---
 
@@ -648,7 +680,7 @@ Your prompt should now show `(.venv)`.
 # Install dependencies (use --prefer-binary to avoid compiler errors on Windows)
 pip install -r requirements.txt --prefer-binary
 
-# Install the Chromium browser for Playwright checkout validation
+# Install Chromium — needed when real Playwright checkout validation is implemented
 playwright install chromium
 ```
 
@@ -746,7 +778,7 @@ The agent will:
 - Scrape RetailMeNot, Honey, Idealo in parallel
 - Search Tavily for fresh codes in blogs and forums
 - Check Bonial/kaufDA for EU in-store deals
-- Validate the top codes at real checkout with Playwright
+- Score and rank codes by confidence (heuristics — real Playwright validation is a future milestone)
 - Return the best codes ranked by saving
 
 ### 3. Copy or apply a code
@@ -1164,8 +1196,7 @@ services:
     buildCommand: >
       pip install -r requirements.txt &&
       playwright install chromium
-      # Installs Python deps then downloads the Chromium browser binary
-      # needed by the Playwright checkout validator
+      # Downloads Chromium — ready for when real checkout validation is implemented
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
       # $PORT is injected by Render — never hardcode a port number
     envVars:
@@ -1220,7 +1251,7 @@ in-place (`-i`) in the file. One command, zero dependencies.
 - **[LangGraph](https://langchain-ai.github.io/langgraph/)** — stateful agent graph with reflection loop
 - **[Claude](https://anthropic.com)** — Sonnet 4 throughout: planning, reflection, and extraction
 - **[MCP](https://modelcontextprotocol.io)** — each tool is an independent MCP server
-- **[Playwright](https://playwright.dev)** — headless browser for checkout validation
+- **[Playwright](https://playwright.dev)** — installed and ready for real checkout validation *(next milestone)*
 - **[FastAPI](https://fastapi.tiangolo.com)** — async Python backend
 - **[Vanilla HTML/CSS/JS](https://developer.mozilla.org/en-US/docs/Web/HTML)** — frontend (no framework, no build step)
 - **[Render](https://render.com)** — deployment
