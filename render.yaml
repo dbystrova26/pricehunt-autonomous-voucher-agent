@@ -22,6 +22,7 @@ services:
         sync: false
       - key: REDIS_URL
         fromService:
+          type: redis
           name: pricehunt-redis
           property: connectionString
 
@@ -30,9 +31,4 @@ services:
     name: pricehunt-redis
     plan: free
     maxmemoryPolicy: allkeys-lru
-
-# NOTE: The frontend (frontend/index.html) is a static site.
-# Deploy it separately in Render dashboard:
-# New → Static Site → connect same repo → Root Directory: frontend
-# Build Command: sed -i "s|http://localhost:8000|https://pricehunt-backend.onrender.com|g" index.html
-# Publish Directory: .
+    ipAllowList: []
