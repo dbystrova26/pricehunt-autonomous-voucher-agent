@@ -445,22 +445,28 @@ async def run_voucher_agent(
         merchant_history=history or {},
     )
 
-    final: AgentState = await _graph.ainvoke(initial)
+    raw = await _graph.ainvoke(initial)
 
-    elapsed_ms = int((time.time() - final.start_time) * 1000)
+    # LangGraph returns a dict — convert back to AgentState for easy access
+    if isinstance(raw, dict):
+        final = AgentState(**{k: v for k, v in raw.items() if k in AgentState.model_fields})
+    else:
+        final = raw
+
+    elapsed_ms = int((time.time() - (final.start_time or time.time())) * 1000)
 
     await write_run_result(
-        merchant=final.merchant,
-        tools_used=final.tools_used,
-        codes_found=len(final.validated_codes),
+        merchant=final.merchant or "unknown",
+        tools_used=final.tools_used or [],
+        codes_found=len(final.validated_codes or []),
         best_saving=final.validated_codes[0]["saving_eur"] if final.validated_codes else 0,
     )
 
     return {
         "merchant": final.merchant,
-        "codes": final.validated_codes,
+        "codes": final.validated_codes or [],
         "bonial_deal": final.bonial_deal,
-        "cached": "cache" in final.tools_used and final.retry_count == 0,
+        "cached": "cache" in (final.tools_used or []) and final.retry_count == 0,
         "latency_ms": elapsed_ms,
         "agent_reasoning": final.reflection_reason,
     }
