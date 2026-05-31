@@ -288,9 +288,12 @@ async def validator_node(state: AgentState) -> AgentState:
             # Write back to cache
             await write_validated_code(
                 merchant=state.merchant,
-                code=candidate["code"],
-                saving_eur=result["saving_eur"],
-                source=candidate.get("source"),
+                codes=[{
+                    "code": candidate["code"],
+                    "saving_eur": result["saving_eur"],
+                    "source": candidate.get("source", "unknown"),
+                    "confidence": result.get("confidence", 0.75),
+                }],
             )
 
     # Sort by saving descending
