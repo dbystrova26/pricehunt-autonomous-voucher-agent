@@ -14,7 +14,7 @@ Pricehunt is not a scraper with a UI. It is an **autonomous LangGraph agent** th
 3. **Enriches** — pulls Bonial/kaufDA weekly leaflets for in-store EU promotions
 4. **Validates** — uses a headless Playwright browser to test codes at real checkouts
 5. **Reflects** — evaluates its own output and retries with a different plan if needed
-6. **Learns** — writes success rates per merchant to Redis, gets smarter every run
+6. **Learns** — writes success rates per merchant to in-memory cache; persists to Redis if available
 7. **Talks** — stays in a chat loop so users can refine results in plain language
 
 ---
@@ -38,8 +38,9 @@ React UI (Vite)
  Scraper  Search      Cache
  MCP srv  MCP srv     MCP srv
     │       │            │
-Retailme  Tavily     Redis
-Not,Honey Reddit     Postgres
+Retailme  Tavily     Cache
+Not,Honey Reddit     (Redis if
+Idealo             available)
 Idealo
             │
          Validator
@@ -417,6 +418,45 @@ maintenance overhead.
 
 ---
 
+### 🗄 Redis + PostgreSQL
+**What they would add:**
+
+Redis — code cache with 6h TTL per merchant so repeat searches return instantly
+instead of re-scraping. Agent memory: which sources worked best per merchant across
+runs. The planner reads this history to make smarter tool selection decisions.
+
+Postgres — long-term run history per merchant, code success/failure analytics,
+user session persistence.
+
+**Why not included by default:**
+Render requires a credit card on file even for the free Redis tier ($0/month).
+To keep the project deployable with zero payment friction, both are omitted.
+The agent runs fine without them — it just re-scrapes on every run.
+
+**To add Redis locally (optional):**
+
+```bash
+# Windows
+winget install Redis.Redis && redis-server
+
+# Linux (Ubuntu / Debian)
+sudo apt install redis-server -y && sudo systemctl start redis-server
+
+# macOS
+brew install redis && brew services start redis
+```
+
+Then set in `backend/.env`:
+```
+REDIS_URL=redis://localhost:6379
+```
+
+**To add Redis on Render:**
+Dashboard → New → Redis → copy the connection string →
+add `REDIS_URL` as an environment variable on the `pricehunt-backend` service.
+
+---
+
 ## Full `.env` file
 
 Copy `backend/.env.example` to `backend/.env` and fill in your values.
@@ -448,8 +488,8 @@ BROWSERBASE_API_KEY=                     # browserbase.com
 BROWSERBASE_PROJECT_ID=                  # browserbase.com
 
 # ── INFRASTRUCTURE ────────────────────────────────────────────────
-REDIS_URL=redis://localhost:6379         # Render auto-fills in production
-DATABASE_URL=postgresql://...            # Render auto-fills in production
+REDIS_URL=                               # optional — leave empty, agent works without it
+DATABASE_URL=                            # optional — leave empty, not needed for MVP
 FRONTEND_URL=http://localhost:5173       # Render auto-fills in production
 ```
 
@@ -547,7 +587,7 @@ REDDIT_CLIENT_SECRET=           # optional — skip for now
 RAKUTEN_API_KEY=                 # optional — skip for now
 BROWSERBASE_API_KEY=             # optional — skip for now
 BROWSERBASE_PROJECT_ID=          # optional — skip for now
-REDIS_URL=redis://localhost:6379 # leave as-is
+REDIS_URL=               # leave empty — Redis is optional, agent works without it
 DATABASE_URL=                    # leave empty
 FRONTEND_URL=http://localhost:5173
 ```
@@ -644,7 +684,7 @@ The agent explains its own reasoning — this is the reflection node in action.
 
 ```bash
 make setup        # create venv, install Python deps, install Chromium
-make redis-start  # start Redis (auto-detects Linux/macOS/WSL2)
+make redis-start  # optional — start Redis for local caching
 make backend      # start FastAPI on port 8000
 make clean        # remove .venv
 ```
@@ -858,7 +898,7 @@ REDDIT_CLIENT_SECRET
 RAKUTEN_API_KEY     → optional, for cashback
 ```
 
-Click **Apply** — Render deploys both services and the Redis instance.
+Click **Apply** — Render deploys the backend service.
 
 ### Step 4 — done
 
@@ -894,10 +934,9 @@ services:
         sync: false
       - key: REDDIT_CLIENT_SECRET
         sync: false
-      - key: REDIS_URL
-        fromService:          # Render wires this automatically from the
-          name: pricehunt-redis   # Redis instance below — no copy-paste needed
-          property: connectionString
+      # REDIS_URL omitted — agent runs without caching on Render free tier.
+      # Redis requires a credit card on Render even for the free plan.
+      # To enable: add a Redis instance manually and set REDIS_URL here.
 
   # ── Frontend: static site (plain HTML) ────────────────────────────────────
   - type: static
@@ -914,11 +953,12 @@ services:
         name: Cache-Control
         value: no-cache       # always serve fresh HTML (important for an agent app)
 
-  # ── Redis: free 25MB instance ─────────────────────────────────────────────
-  - type: redis
-    name: pricehunt-redis
-    plan: free                # 25MB — enough for code cache + agent memory
-    maxmemoryPolicy: allkeys-lru   # evict oldest keys when full
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  # Redis is NOT included in this render.yaml.
+  # Render requires a credit card even for the free Redis tier.
+  # The agent runs fine without it — results are not cached between runs.
+  # To add Redis later: Render dashboard → New → Redis → copy connection string
+  # → add REDIS_URL env var to pricehunt-backend service.
 ```
 
 ### Why `sed` instead of a build tool

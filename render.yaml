@@ -20,15 +20,10 @@ services:
         sync: false
       - key: RAKUTEN_API_KEY
         sync: false
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: pricehunt-redis
-          property: connectionString
+      # REDIS_URL intentionally omitted — agent runs without caching.
+      # Add a Redis instance and set REDIS_URL here to enable caching.
 
-  # ── Redis: free 25MB instance ───────────────────────────────────────────────
-  - type: redis
-    name: pricehunt-redis
-    plan: free
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []
+# NOTE: Frontend is deployed separately as a Static Site:
+# New → Static Site → same repo → Root Directory: frontend
+# Build Command: sed -i "s|http://localhost:8000|https://pricehunt-backend.onrender.com|g" index.html
+# Publish Directory: .
