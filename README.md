@@ -38,8 +38,8 @@ React UI (Vite)
  Scraper  Search      Cache
  MCP srv  MCP srv     MCP srv
     │       │            │
-Retailme  Brave API   Redis
-Not,Honey Reddit      Postgres
+Retailme  Tavily     Redis
+Not,Honey Reddit     Postgres
 Idealo
             │
          Validator
@@ -129,7 +129,7 @@ Each `run_tool(name)` call dispatches to the relevant MCP server:
 |---|---|---|
 | `cache` | cache-mcp-server | Redis lookup — instant, no network cost |
 | `scraper` | scraper-mcp-server | Playwright scrape of RetailMeNot, Honey, Idealo |
-| `search` | search-mcp-server | Brave Search + Reddit, then Sonnet extracts codes |
+| `search` | search-mcp-server | Tavily Search + Reddit → Sonnet extracts codes |
 | `bonial` | bonial-mcp-server | kaufDA weekly leaflet scraper |
 
 After all tools finish, codes are deduplicated by code string and stored in `state.raw_codes`.
@@ -246,7 +246,7 @@ startup and calls them by name over JSON-RPC.
 
 ```
 agent.py  ──MCP──►  scraper-mcp-server   (scrape_retailmenot, scrape_honey)
-          ──MCP──►  search-mcp-server    (brave_search, reddit_search)
+          ──MCP──►  search-mcp-server    (tavily_search, reddit_search)
           ──MCP──►  cache-mcp-server     (get_cached_codes, write_validated_code)
           ──MCP──►  validator-mcp-server (validate_code_at_checkout)
           ──MCP──►  bonial-mcp-server    (get_bonial_deals)
@@ -288,26 +288,43 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 
 ---
 
-### 🔍 Brave Search API
-**What:** Independent web search index. Returns structured JSON results for any query.
-Used by the search MCP server to find codes buried in blog posts, deal forums, and
-news articles that scraping aggregators like RetailMeNot miss.
+### 🔍 Tavily Search API
+**What:** A search API built specifically for AI agents. Returns clean, LLM-optimised
+snippets with no SEO noise — structured exactly for downstream code extraction.
+Used by the search MCP server to find codes buried in blog posts, deal forums,
+and news articles that scraping aggregators like RetailMeNot miss.
 
-**Why Brave over Google:** Google's Custom Search API costs $5 per 1,000 queries and
-heavily rate-limits free use. Brave offers 2,000 free requests/month, has no Google
-tracking overhead, and returns cleaner structured snippets for code extraction.
+**Why Tavily over Brave Search:**
 
-**Why not SerpAPI:** SerpAPI costs $50/month minimum. Good for production but overkill
-for an MVP. Brave covers the same use case for free.
+We evaluated three options before choosing Tavily:
+
+| | Tavily | Brave Search | Google CSE |
+|---|---|---|---|
+| Free tier | 1,000 req/mo, no credit card | ~1,000 req/mo but requires billing setup | 100/day then $5/1k |
+| Built for AI | ✅ Pre-structured for LLMs | ❌ Raw results | ❌ Raw results |
+| Official Python SDK | ✅ `pip install tavily-python` | ❌ Manual HTTP client | ❌ Manual HTTP client |
+| Setup friction | Sign up, get key, done | Requires payment method on file | Requires Google Cloud project |
+
+The decisive reason: Tavily gives you **1,000 genuinely free searches per month
+with no credit card required**. Brave requires billing setup even to access the
+free monthly credit. For an open-source project where contributors should be able
+to clone and run immediately, removing payment friction is the right call.
+
+The secondary reason: Tavily results are already optimised for LLM consumption —
+cleaner snippets, better relevance for agent use cases, less post-processing needed.
 
 **How to get:**
-1. Go to https://api.search.brave.com
-2. Sign up → Developer Dashboard → Create Subscription (Free tier)
-3. Copy the API key from the dashboard
+1. Go to https://app.tavily.com
+2. Sign up — email only, no credit card
+3. Dashboard → API Keys → Create key
 
 ```
-BRAVE_API_KEY=BSA...
+TAVILY_API_KEY=tvly-...
 ```
+
+> **Cost estimate:** Each agent run fires 2–3 Tavily queries.
+> 1,000 free requests/month = ~300–500 full agent runs before any charge.
+> Well above what you need for a demo or production MVP.
 
 ---
 
@@ -465,7 +482,7 @@ Copy `.env.example` to `.env` and fill in your values:
 ANTHROPIC_API_KEY=sk-ant-api03-...       # platform.anthropic.com
 
 # ── Search ───────────────────────────────────────────────────────
-BRAVE_API_KEY=BSA...                     # api.search.brave.com (free 2k/mo)
+TAVILY_API_KEY=tvly-...                  # app.tavily.com (1k free req/mo, no credit card)
 REDDIT_CLIENT_ID=abc123...               # reddit.com/prefs/apps
 REDDIT_CLIENT_SECRET=xyz789...           # reddit.com/prefs/apps
 
@@ -486,7 +503,7 @@ FRONTEND_URL=http://localhost:5173       # Render auto-fills in production
 
 Priority for getting keys:
 1. `ANTHROPIC_API_KEY` — get this first, nothing works without it
-2. `BRAVE_API_KEY` — 2 minutes, free
+2. `TAVILY_API_KEY` — 2 minutes, genuinely free (no credit card)
 3. `REDDIT_CLIENT_ID` + `SECRET` — 5 minutes, free
 4. `RAKUTEN_API_KEY` — apply early, takes 1–2 days for approval
 
@@ -719,7 +736,7 @@ pricehunt-autonomous-voucher-agent/
 │   │   ├── checkout-validation.md   # how to validate codes with Playwright
 │   │   └── bonial-scraping.md       # how to parse kaufDA leaflet pages
 │   └── tools/
-│       ├── brave-search.md          # tool definition: brave_search
+│       ├── tavily-search.md         # tool definition: tavily_search
 │       ├── reddit-search.md         # tool definition: reddit_search
 │       ├── retailmenot-scraper.md   # tool definition: scrape_retailmenot
 │       ├── code-validator.md        # tool definition: validate_code_at_checkout
@@ -842,7 +859,7 @@ Enter them one by one in the Render dashboard:
 
 ```
 ANTHROPIC_API_KEY   → your sk-ant-... key
-BRAVE_API_KEY       → your BSA... key
+TAVILY_API_KEY      → your tvly-... key
 REDDIT_CLIENT_ID    → from reddit.com/prefs/apps
 REDDIT_CLIENT_SECRET
 RAKUTEN_API_KEY     → optional, for cashback
@@ -878,7 +895,7 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false           # "sync: false" = you type this in the dashboard
-      - key: BRAVE_API_KEY
+      - key: TAVILY_API_KEY
         sync: false
       - key: REDDIT_CLIENT_ID
         sync: false
