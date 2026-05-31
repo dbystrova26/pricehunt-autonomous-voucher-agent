@@ -180,7 +180,7 @@ async def run_tools_node(state: AgentState) -> AgentState:
         try:
             if tool_name == "cache":
                 result = await get_cached_codes(state.merchant)
-                codes = result.get("codes", [])
+                codes = result if isinstance(result, list) else result.get("codes", [])
 
             elif tool_name == "scraper":
                 # Fan out to all scraper sites
@@ -200,7 +200,10 @@ async def run_tools_node(state: AgentState) -> AgentState:
                     r = await tavily_search(query)
                     snippets.extend(r.get("snippets", []))
                 reddit = await reddit_search(state.merchant)
-                snippets.extend(reddit.get("snippets", []))
+                if isinstance(reddit, list):
+                    snippets.extend(reddit)
+                elif isinstance(reddit, dict):
+                    snippets.extend(reddit.get("snippets", []))
                 # Extract codes from raw text with Sonnet
                 if snippets:
                     extracted = await extract_codes_from_text(
@@ -503,14 +506,16 @@ Respond with valid JSON only:
     response = await llm.ainvoke(messages)
 
     try:
-        # Strip markdown code fences if model wraps response in ```json ... ```
         raw = response.content.strip()
+        # Strip markdown code fences: ```json ... ``` or ``` ... ```
         if raw.startswith("```"):
-            raw = re.sub(r"^```(?:json)?
-?", "", raw)
-            raw = re.sub(r"
-?```$", "", raw)
-        parsed = json.loads(raw.strip())
+            lines = raw.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            raw = "\n".join(lines).strip()
+        parsed = json.loads(raw)
     except json.JSONDecodeError:
         parsed = {"reply": response.content, "action": None}
 
