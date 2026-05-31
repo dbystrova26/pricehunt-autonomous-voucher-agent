@@ -1,4 +1,5 @@
 # Skill: Checkout Validation with Playwright
+**Status:** ⏭ Future milestone — `validator.py` currently uses heuristics (70% mock pass rate). This skill documents the real Playwright implementation plan.
 **Used by:** `validator.py` → `validate_code_at_checkout()` — called for each
 candidate code before returning results to the user.
 

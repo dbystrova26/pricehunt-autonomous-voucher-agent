@@ -1,141 +1,66 @@
 # Tool: reddit_search
 **MCP Server:** `search-mcp-server`
 **File:** `backend/tools/search.py`
+**Status:** ⏭ Stub — returns `[]`. Reddit API access blocked by 2026 Responsible Builder Policy.
 
 ---
 
-## Description
-
-Searches Reddit for fresh voucher codes using the Reddit API.
-Targets deal-focused subreddits where users post codes before they
-reach aggregators like RetailMeNot or Honey.
-
-Reddit is often **24–48 hours ahead** of traditional coupon sites for:
-- Flash sale codes posted by brand accounts
-- Employee or insider codes shared in brand subreddits
-- Limited-use codes that expire before scrapers index them
-
-Use this tool when:
-- Brave Search or scraping returned 0 codes
-- The user explicitly asks to "search Reddit"
-- The merchant is a direct-to-consumer brand with an active subreddit
-- You need codes posted within the last 24 hours
-
----
-
-## Target subreddits
+## Current implementation
 
 ```python
-SUBREDDITS = [
-    "deals",           # r/deals — general deal sharing
-    "promo_codes",     # r/promo_codes — dedicated code sharing
-    "frugal",          # r/frugal — budget-conscious shoppers
-    "beermoney",       # sometimes has referral + promo codes
-]
-
-# Also search merchant-specific subreddits when they exist
-# e.g. r/Zalando, r/nikerunning
-MERCHANT_SUBREDDIT_PATTERN = "r/{merchant_slug}"
+async def reddit_search(query: str, subreddits: list[str] = None) -> list[dict]:
+    # Reddit introduced Responsible Builder Policy in 2026 blocking new apps
+    return []
 ```
+
+Tavily Search partially covers Reddit as it indexes Reddit pages in web results.
 
 ---
 
-## Input schema
+## What this tool will do when access is granted
 
-```json
-{
-  "merchant": "string — merchant name, e.g. Zalando",
-  "days_back": "integer (default: 7) — only return posts from last N days",
-  "limit": "integer (default: 25)"
-}
-```
+Search r/deals, r/promo_codes, r/frugal and merchant-specific subreddits
+for codes posted within the last 7 days. Reddit is often 24–48 hours ahead
+of aggregators for flash sale codes.
 
 ---
 
-## Output schema
+## Why Reddit access is blocked
 
-```json
-{
-  "snippets": [
-    "[WORKING] Zalando SUMMER18 — 18% off, confirmed today",
-    "Has anyone tried ZLFRESH20? Just posted in r/deals"
-  ],
-  "posts": [
-    {
-      "title": "[CODE] Zalando 18% off — SUMMER18",
-      "subreddit": "deals",
-      "score": 142,
-      "created_utc": 1717200000,
-      "url": "https://reddit.com/r/deals/comments/..."
-    }
-  ]
-}
-```
+Reddit's [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564)
+introduced in 2026 requires explicit approval before creating API apps.
+The approval flow was not completed during development.
 
 ---
 
-## Implementation
+## What Reddit would add (per agent's own analysis)
+
+| Signal | Without Reddit | With Reddit |
+|---|---|---|
+| Code freshness | Unknown | Post timestamp |
+| User verification | None | "Worked for me!" replies |
+| Failure reports | Hidden | "Expired" warnings |
+| Regional validity | Unknown | Users mention country |
+
+Only surface codes with upvotes + positive replies in last 7 days.
+
+---
+
+## Target subreddits (future)
 
 ```python
-import httpx
-import os
-import time
+SUBREDDITS = ["deals", "promo_codes", "frugal", "einkaufen"]
+```
 
+## Implementation plan
+
+```python
 REDDIT_CLIENT_ID     = os.getenv("REDDIT_CLIENT_ID")
 REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET")
-REDDIT_USER_AGENT    = "pricehunt-agent/1.0 (Ironhack project)"
 
-async def _get_reddit_token() -> str:
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            "https://www.reddit.com/api/v1/access_token",
-            auth=(REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET),
-            data={"grant_type": "client_credentials"},
-            headers={"User-Agent": REDDIT_USER_AGENT},
-        )
-        return r.json()["access_token"]
-
-async def reddit_search(merchant: str, days_back: int = 7, limit: int = 25) -> dict:
+async def reddit_search(merchant: str, days_back: int = 7) -> list[dict]:
     token = await _get_reddit_token()
-    cutoff = int(time.time()) - (days_back * 86400)
-
-    snippets, posts = [], []
-
-    for subreddit in ["deals", "promo_codes"]:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(
-                f"https://oauth.reddit.com/r/{subreddit}/search",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "User-Agent": REDDIT_USER_AGENT,
-                },
-                params={
-                    "q": merchant,
-                    "sort": "new",
-                    "limit": limit,
-                    "restrict_sr": "true",
-                },
-                timeout=6.0,
-            )
-            for post in r.json().get("data", {}).get("children", []):
-                d = post["data"]
-                if d.get("created_utc", 0) < cutoff:
-                    continue
-                snippets.append(f"{d['title']} — {d.get('selftext', '')[:200]}")
-                posts.append({
-                    "title": d["title"],
-                    "subreddit": subreddit,
-                    "score": d.get("score", 0),
-                    "created_utc": d.get("created_utc"),
-                    "url": f"https://reddit.com{d.get('permalink', '')}",
-                })
-
-    return {"snippets": snippets, "posts": posts}
+    # Search r/deals, r/promo_codes for merchant + code keywords
+    # Filter by post age (cutoff = now - days_back * 86400)
+    # Boost confidence for posts with score > 50
 ```
-
----
-
-## Scoring boost
-
-Posts from Reddit with score > 50 get a +0.10 confidence boost on
-extracted codes — high upvotes signal community verification.

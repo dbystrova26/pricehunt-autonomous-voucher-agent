@@ -1,4 +1,5 @@
 # Skill: Bonial / kaufDA Leaflet Scraping
+**Status:** ⏭ Future milestone — `bonial.py` currently returns `None`. This skill documents the implementation plan.
 **Used by:** `bonial.py` → `get_bonial_deals()` — called by the agent's
 `run_tools_node` when `include_bonial: true` in the plan.
 

@@ -1,42 +1,43 @@
 # Tool: get_bonial_deals
 **MCP Server:** `bonial-mcp-server`
 **File:** `backend/tools/bonial.py`
+**Status:** ⏭ Stub — returns `None`. Real kaufDA scraping is a future milestone.
 
 ---
 
-## Description
+## Current implementation
 
-Scrapes kaufDA.de (Bonial Germany) for the current week's in-store
-promotional deals for a given merchant. Returns a human-readable
-deal summary and structured offer data.
+```python
+async def get_bonial_deals(merchant: str, city: str = "Frankfurt") -> str | None:
+    # TODO: implement Playwright scraping of kaufda.de
+    return None
+```
 
-This tool is Pricehunt's key differentiator — it bridges **online discount codes**
-with **offline in-store promotions**, something no other voucher tool does.
-
-Use this tool when:
-- `include_bonial: true` in the planner's plan
-- Merchant is a known EU brick-and-mortar retailer
-- User asks about in-store deals or nearby promotions
-
-Skip this tool when:
-- Merchant is online-only (e.g. a pure DTC brand)
-- Merchant is non-EU
-- Bonial cache is fresh (under 24 hours)
+The agent currently answers Frankfurt in-store questions using Claude's built-in
+knowledge of EU retailers. When asked directly, it honestly discloses it did not
+query kaufDA in real time.
 
 ---
 
-## Input schema
+## What this tool will do when implemented
 
-```json
-{
-  "merchant": "string — merchant name, e.g. H&M, MediaMarkt, Zalando",
-  "location": "string optional — city for geo-relevant results, e.g. Frankfurt"
-}
+Scrape kaufDA.de for the current week's in-store promotional deals for a given
+merchant, returning a human-readable deal summary alongside online voucher codes.
+
+This would be Pricehunt's key differentiator — bridging online discount codes
+with offline in-store promotions.
+
+---
+
+## Target URL pattern
+
+```python
+SEARCH_URL = "https://www.kaufda.de/suche/{merchant_slug}"
 ```
 
 ---
 
-## Output schema
+## Output schema (future)
 
 ```json
 {
@@ -47,58 +48,23 @@ Skip this tool when:
     {
       "title": "Summer Collection –30%",
       "discount": "30%",
-      "valid_from": "2025-06-02",
-      "valid_until": "2025-06-08",
+      "valid_until": "2025-07-06",
       "in_store": true,
-      "online": false,
-      "category": "Fashion"
+      "online": false
     }
   ],
-  "leaflet_url": "https://www.kaufda.de/...",
-  "cached": false,
-  "scraped_at": "2025-06-01T10:00:00Z"
+  "leaflet_url": "https://www.kaufda.de/..."
 }
 ```
 
-If no deals found:
-```json
-{
-  "merchant": "SomeNicheShop",
-  "deal_summary": null,
-  "deals": []
-}
-```
+If no deals found: `{ "deal_summary": null, "deals": [] }`
 
 ---
 
-## UI behaviour
+## Partnership alternative
 
-When `deal_summary` is not null, the React frontend renders the
-**Bonial enrichment strip** below the voucher card:
+Contact **partner@bonial.com** for structured feed access instead of scraping.
+Provides machine-readable JSON feed, push updates, and full retailer catalogue.
 
-```
-📰  H&M: Summer collection –30% in-store until Sunday  [kaufDA]
-```
-
-When `deal_summary` is null, the strip is hidden entirely.
-
----
-
-## Caching
-
-Cache Bonial results for **24 hours** (not 6h like codes — leaflets change weekly).
-
-```python
-BONIAL_TTL = 60 * 60 * 24   # 24h
-CACHE_KEY  = f"bonial:{merchant.lower()}"
-```
-
----
-
-## Read before implementing
-
-See `.claude/skills/bonial-scraping.md` for:
-- Full selector strategy for kaufDA.de
-- Output format details
-- Partnership contact for structured feed access
-- Handling missing merchants gracefully
+## Read also
+`.claude/skills/bonial-scraping.md` — full selector strategy and implementation plan.
