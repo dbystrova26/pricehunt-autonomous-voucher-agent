@@ -919,52 +919,53 @@ cd frontend && python -m http.server 5173
 
 ```
 pricehunt-autonomous-voucher-agent/
+│
 ├── README.md
 ├── Makefile                         # dev shortcuts
-├── render.yaml                      # one-file Render deployment
+├── render.yaml                      # Render deployment config
 ├── .gitignore
-├── .claude/
-│   ├── skills/
-│   │   ├── voucher-extraction.md    # how to extract codes from raw text
-│   │   ├── checkout-validation.md   # how to validate codes with Playwright
-│   │   └── bonial-scraping.md       # how to parse kaufDA leaflet pages
-│   └── tools/
-│       ├── tavily-search.md         # tool definition: tavily_search
-│       ├── reddit-search.md         # tool definition: reddit_search
-│       ├── retailmenot-scraper.md   # tool definition: scrape_retailmenot
-│       ├── code-validator.md        # tool definition: validate_code_at_checkout
-│       └── bonial-deals.md          # tool definition: get_bonial_deals
-├── backend/
-│   ├── .venv/                       # virtual environment (git-ignored)
-│   ├── .env                         # your secrets (git-ignored)
-│   ├── .env.example                 # template to copy
-│   ├── main.py                      # FastAPI app — all endpoints
-│   ├── agent.py                     # LangGraph graph — all five nodes
-│   ├── memory.py                    # Redis cache + run history
-│   ├── requirements.txt             # pinned Python dependencies
-│   └── tools/
-│       ├── scraper.py               # MCP scraper server
-│       ├── search.py                # MCP search server
-│       ├── cache.py                 # MCP cache server
-│       ├── validator.py             # MCP validator server
-│       └── bonial.py               # MCP Bonial/kaufDA server
-└── frontend/
-    ├── index.html                   # ★ THE DEPLOYED FILE — plain HTML, real API calls
-    ├── .env.example                 # local dev only (not needed for deploy)
-    └── src/                         # React reference implementation (not deployed)
-        ├── main.jsx                 # React root mount
-        ├── index.css                # global CSS design tokens
-        ├── App.jsx                  # main layout — search + results + tabs
-        ├── App.module.css
-        ├── api.js                   # all backend calls in one place
-        └── components/
-            ├── VoucherCard.jsx      # one merchant result card
-            ├── VoucherCard.module.css
-            ├── ChatPanel.jsx        # chat with history, quick replies, streaming
-            ├── ChatPanel.module.css
-            ├── StatsBar.jsx         # saved / codes / merchants counters
-            └── StatsBar.module.css
+├── .env.example                     # env template
+│
+│── agent.py                         # LangGraph graph — all five nodes
+├── main.py                          # FastAPI app — all endpoints
+├── memory.py                        # in-memory cache + run history
+├── requirements.txt                 # Python dependencies
+│
+│── ── MCP tool documentation ──
+├── tavily-search.md                 # tool definition: tavily_search ✅
+├── reddit-search.md                 # tool definition: reddit_search ⏭
+├── retailmenot-scraper.md           # tool definition: scrape_retailmenot ⏭
+├── code-validator.md                # tool definition: validate_code_at_checkout ⏭
+├── bonial-deals.md                  # tool definition: get_bonial_deals ⏭
+├── voucher-extraction.md            # skill: extract codes from raw text ✅
+├── checkout-validation.md           # skill: Playwright validation plan ⏭
+├── bonial-scraping.md               # skill: kaufDA scraping plan ⏭
+│
+├── index.html                       # ★ THE DEPLOYED FRONTEND — plain HTML
+├── App.jsx                          # React reference (not deployed)
+├── ChatPanel.jsx                    # React reference (not deployed)
+├── VoucherCard.jsx                  # React reference (not deployed)
+├── api.js                           # React reference (not deployed)
+├── vite.config.js                   # React reference (not deployed)
+│
+└── mnt/user-data/outputs/           # ← deployed backend lives here on Render
+    └── pricehunt_project/
+        └── backend/
+            ├── main.py
+            ├── agent.py
+            ├── memory.py
+            └── tools/
+                ├── scraper.py       # MCP scraper stub ⏭
+                ├── search.py        # MCP search — Tavily ✅
+                ├── cache.py         # MCP cache ✅
+                ├── validator.py     # MCP validator (heuristics) ✅
+                └── bonial.py        # MCP Bonial stub ⏭
 ```
+
+> **Note:** The repo structure is flat — files are at root level rather than
+> in `backend/` and `.claude/` subdirectories. This reflects how the project
+> evolved during development. A future cleanup would reorganize into the
+> canonical structure described in the setup section.
 
 ---
 
