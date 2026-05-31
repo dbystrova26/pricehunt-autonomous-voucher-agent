@@ -23,7 +23,7 @@ This is the gap Pricehunt fills.
 **Pricehunt is different in three ways:**
 
 **1. Autonomous, not static.**
-Every search triggers a live agent run — scraping aggregators, searching the web via Tavily, checking in-store leaflets via Bonial, and querying its own memory of past runs. No stale database. Results are fresh on every request.
+Every search triggers a live agent run — searching the web via Tavily, checking its own memory of past runs, and querying scraper stubs for RetailMeNot/Honey/Idealo *(real scraping is a future milestone)*. No stale database. Results are fresh on every request.
 
 **2. Transparent, not a black box.**
 The agent explains exactly what it found, where it found it, and how confident it is. When a code fails it tells you why. When it's uncertain it says so. You stay in control.
@@ -40,61 +40,90 @@ After the initial search you can refine in plain language: "only show codes savi
 
 Pricehunt is not a scraper with a UI. It is an **autonomous LangGraph agent** that:
 
-1. **Plans** — reads its own memory to decide which sources to check and in what order
-2. **Hunts** — fans out to scraper, search, and cache MCP tool servers in parallel
-3. **Enriches** — pulls Bonial/kaufDA weekly leaflets for in-store EU promotions
-4. **Scores** — ranks found codes by confidence using heuristics: source reputation, code age, merchant patterns *(real Playwright checkout validation is the next development milestone — see future development)*
-5. **Reflects** — evaluates its own output and retries with a different plan if needed
-6. **Learns** — writes success rates per merchant to in-memory cache; persists to Redis if available
-7. **Talks** — stays in a chat loop so users can refine results in plain language
+1. **Plans** ✅ — reads merchant run history from in-memory cache to decide which sources to check and in what order
+2. **Hunts** ✅ — fans out to search (Tavily) and cache MCP tool servers in parallel; scraper stubs are in place for RetailMeNot, Honey, Idealo *(real HTML scraping is a future milestone)*
+3. **Enriches** ⏭ — Bonial/kaufDA stub returns `None`; no real kaufDA query is made. The agent answers Frankfurt store questions using Claude's built-in knowledge, and honestly says so when asked. Real-time leaflet data from kaufDA is a future milestone.
+4. **Scores** ✅ — ranks found codes by confidence using heuristics: source reputation, code age, merchant patterns *(real Playwright checkout validation is the next development milestone — see future development)*
+5. **Reflects** ✅ — evaluates its own output, explains reasoning, and reports honestly when no valid codes are found
+6. **Learns** ✅ — writes run results to in-memory dict; persists to Redis when `REDIS_URL` is set *(Redis optional — not required to run)*
+7. **Talks** ✅ — full chat loop so users can refine results, switch merchants, and ask the agent to explain its decisions in plain language
 
 ---
 
 ## Live demo
 
 > **Try it:** https://pricehunt-frontend.onrender.com
+>
+> **API docs:** https://pricehunt-backend-qmx5.onrender.com/docs
 
-### Finding a real voucher code — H&M
+> ⚠️ Free tier — backend spins down after 15 min of inactivity.
+> Open the [health endpoint](https://pricehunt-backend-qmx5.onrender.com/health) first to wake it up, then refresh the frontend.
 
-The agent searched RetailMeNot, Honey, Idealo and Tavily web search in parallel,
-found code **T07V** on WorthEPenny, and returned it with 85% confidence in 15.8s.
+---
+
+### Demo walkthrough
+
+**Step 1 — Search a merchant**
+
+Type `H&M` in the search box. The agent runs cache → Tavily search → scores results.
+Returns code **T07V** from WorthEPenny, 85% confidence, –€5 saving, in 15.8s.
+
+**Step 2 — Ask what sources were checked**
+
+> *"What sources did you check?"*
+
+The agent explains: cache miss → Tavily search found T07V on WorthEPenny →
+scored top 3 candidates → returned best. Breaks down why confidence is 30–40%
+without real checkout validation.
+
+**Step 3 — Ask about Frankfurt in-store deals**
+
+> *"Any in-store deals near Frankfurt this week?"*
+
+Agent correctly flags Zalando as online-only (no physical stores in Germany).
+Switches to H&M and lists Frankfurt locations: Zeil, MyZeil, Nordwestzentrum.
+Honestly discloses it used built-in knowledge, not real kaufDA data.
+
+**Step 4 — Ask the Joko comparison**
+
+> *"How does Pricehunt differ from Joko?"*
+
+Agent's response:
+> *"Joko does it for you silently. Pricehunt shows its work so you stay in control.*
+> *If you just want set-and-forget savings, Joko wins on convenience.*
+> *If you want to understand what you're applying and why, Pricehunt adds real value."*
+
+---
+
+### Screenshots
+
+> Add screenshots to `docs/screenshots/` with these filenames to display them here:
+> - `demo-hm-code.png` — H&M card with T07V validated, –€5
+> - `demo-sources.png` — "What sources did you check?" agent response
+> - `demo-frankfurt.png` — Frankfurt store intelligence response
+> - `demo-joko.png` — Joko vs Pricehunt comparison response
+
+### H&M — validated code T07V, –€5, 85% confidence
 
 ![H&M validated code T07V](docs/screenshots/demo-hm-code.png)
 
 ---
 
-### Agent explains its sources and reasoning
-
-When asked "What sources did you check?" the agent breaks down exactly what it
-did — cache miss, scraper results, Tavily search — and why it rates the code
-at 30-40% confidence without real checkout validation.
+### Agent source transparency — "What sources did you check?"
 
 ![Agent source explanation](docs/screenshots/demo-sources.png)
 
 ---
 
-### Frankfurt in-store context
-
-The agent knows which merchants have physical Frankfurt stores. When asked about
-Zalando in-store deals it correctly flags Zalando as online-only and suggests
-H&M Zeil, MyZeil, and Nordwestzentrum instead.
+### Frankfurt in-store intelligence
 
 ![Frankfurt store intelligence](docs/screenshots/demo-frankfurt.png)
 
 ---
 
-### Pricehunt vs Joko — the agent makes the comparison
+### Pricehunt vs Joko
 
-> *"Joko does it for you silently.*
-> *Pricehunt shows its work so you stay in control."*
->
-> *"If you just want set-and-forget savings, Joko wins on convenience.*
-> *If you want to understand what you're applying and why, Pricehunt adds real value."*
-
-![Joko comparison](docs/screenshots/demo-joko-comparison.png)
-
-> **How to add screenshots:** save the four images above into `docs/screenshots/`
-> in the repo with the filenames shown. The README will render them automatically on GitHub.
+![Joko comparison](docs/screenshots/demo-joko.png)
 
 ---
 
