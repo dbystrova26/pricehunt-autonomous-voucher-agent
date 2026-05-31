@@ -12,7 +12,7 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: BRAVE_API_KEY
+      - key: TAVILY_API_KEY
         sync: false
       - key: REDDIT_CLIENT_ID
         sync: false
@@ -25,23 +25,14 @@ services:
           name: pricehunt-redis
           property: connectionString
 
-  # ── Frontend: static site (plain HTML, no build step) ──────────────────────
-  # The only "build" step is a sed command that swaps the localhost URL
-  # in index.html with the real backend URL on Render.
-  # No npm, no node_modules, no bundler needed.
-  - type: static
-    name: pricehunt-frontend
-    rootDir: frontend
-    buildCommand: >-
-      sed -i "s|http://localhost:8000|https://pricehunt-backend.onrender.com|g" index.html
-    staticPublishPath: .
-    headers:
-      - path: /*
-        name: Cache-Control
-        value: no-cache
-
   # ── Redis: free 25MB instance ───────────────────────────────────────────────
   - type: redis
     name: pricehunt-redis
     plan: free
     maxmemoryPolicy: allkeys-lru
+
+# NOTE: The frontend (frontend/index.html) is a static site.
+# Deploy it separately in Render dashboard:
+# New → Static Site → connect same repo → Root Directory: frontend
+# Build Command: sed -i "s|http://localhost:8000|https://pricehunt-backend.onrender.com|g" index.html
+# Publish Directory: .
