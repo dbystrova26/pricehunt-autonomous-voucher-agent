@@ -131,7 +131,7 @@ Agent's response:
 
 
 ```
-React UI (Vite)
+Plain HTML frontend (index.html)
     │
     ├── POST /vouchers          ← main agent search
     ├── POST /chat              ← human-in-the-loop chat
@@ -146,18 +146,17 @@ React UI (Vite)
     │       │            │
  Scraper  Search      Cache
  MCP srv  MCP srv     MCP srv
+(⏭ stub) (✅ Tavily)  (✅ in-mem)
     │       │            │
-Retailme  Tavily     Cache
-Not,Honey Reddit     (Redis if
-Idealo             available)
-Idealo
+   [ ]   Tavily +    in-memory
+         Reddit      dict
+         (⏭ stub)   Redis if set
             │
-         Validator
-         MCP server
-         (stub)
+         Validator MCP server
+         (✅ heuristic scoring — ⏭ real Playwright checkout is next milestone)
             │
          Bonial MCP server
-         (kaufDA leaflets)
+         (⏭ stub — returns None, Claude knowledge used instead)
 ```
 
 ---
@@ -200,7 +199,7 @@ This runs first on every call. It strips URL parts, title-cases the name, and st
 
 The brain of the agent. Makes a Claude Sonnet API call with a prompt that includes:
 - The merchant name and category
-- The full history from Redis (which sources worked last time, their hit rates)
+- The run history from in-memory cache (or Redis if REDIS_URL is set)
 - What tools were already tried if this is a retry
 
 It returns a **JSON plan** — not prose, not a decision tree hardcoded by a developer:
@@ -240,7 +239,7 @@ Each `run_tool(name)` call dispatches to the relevant MCP server:
 | `cache` | cache-mcp-server | Redis lookup — instant, no network cost |
 | `scraper` | scraper-mcp-server | Scrapes RetailMeNot, Honey, Idealo *(stub — returns empty list, real scraping is a future milestone)* |
 | `search` | search-mcp-server | Tavily Search + Reddit → Sonnet extracts codes |
-| `bonial` | bonial-mcp-server | kaufDA weekly leaflet scraper |
+| `bonial` | bonial-mcp-server | kaufDA weekly leaflet scraper *(⏭ stub — returns None, future milestone)* |
 
 After all tools finish, codes are deduplicated by code string and stored in `state.raw_codes`.
 
@@ -322,12 +321,13 @@ User: POST /vouchers {"merchant_url": "zalando.de"}
 
 1. extract_merchant  →  merchant = "Zalando", start_time = now()
 
-2. planner           →  reads Redis: "last 5 runs, RetailMeNot hit rate 80%"
+2. planner           →  reads in-memory history (Redis if REDIS_URL set)
                         LLM decides: {"tools":["cache","scraper"], "parallel":true}
 
-3. run_tools         →  cache: miss (6h TTL expired)
-                        scraper: RetailMeNot returns [SUMMER18, WELCOME10, FLASH5]
-                        bonial: "Jeans –20% in-store until Sunday"
+3. run_tools         →  cache: miss (no Redis, in-memory only)
+                        scraper: stub returns [] *(real scraping is a future milestone)*
+                        search: Tavily finds T07V on WorthEPenny ✅
+                        bonial: stub returns None *(real kaufDA scraping is a future milestone)*
 
 4. validator         →  scores 3 codes by heuristics (source, age, patterns)
                         SUMMER18: confidence 0.85, estimated €18 saving ✅
@@ -515,8 +515,8 @@ Usage-based pricing — cost scales with number of validations.
 ### 📰 Bonial / kaufDA Partnership API
 **What it would add:** Structured weekly leaflet feed from 500+ EU retailers
 instead of scraping. Push notifications when new leaflets go live. Full
-merchant catalogue with IDs. Currently the agent scrapes kaufDA.de directly
-which works but is fragile to site changes.
+merchant catalogue with IDs. The `bonial.py` stub currently returns `None` — the agent uses Claude's built-in
+knowledge to answer in-store questions, and honestly discloses this when asked.
 
 **How to get:** Contact partner@bonial.com — this is a business partnership,
 not a self-serve API. Bonial's platform (kaufDA in DE, Bonial in FR) is the
@@ -804,9 +804,10 @@ MediaMarkt Germany
 
 The agent will:
 - Check its cache (instant if seen before)
-- Scrape RetailMeNot, Honey, Idealo in parallel
-- Search Tavily for fresh codes in blogs and forums
-- Check Bonial/kaufDA for EU in-store deals
+- Check its cache (in-memory)
+- Search Tavily for fresh codes in blogs and forums ✅
+- Query scraper stubs for RetailMeNot, Honey, Idealo *(real scraping is a future milestone)*
+- Query Bonial stub *(returns None — real kaufDA integration is a future milestone)*
 - Score and rank codes by confidence (heuristics — real Playwright validation is a future milestone)
 - Return the best codes ranked by saving
 
@@ -1242,19 +1243,11 @@ services:
       # To enable: add a Redis instance manually and set REDIS_URL here.
 
   # ── Frontend: static site (plain HTML) ────────────────────────────────────
-  - type: static
-    name: pricehunt-frontend
-    rootDir: frontend
-    buildCommand: >
-      sed -i "s|http://localhost:8000|https://pricehunt-backend.onrender.com|g" index.html
-      # This is the entire "build" step.
-      # It replaces the localhost URL in index.html with the real backend URL.
-      # No npm, no node_modules, no compilation — one sed command.
-    staticPublishPath: .      # serve the folder as-is after the sed command
-    headers:
-      - path: /*
-        name: Cache-Control
-        value: no-cache       # always serve fresh HTML (important for an agent app)
+  # NOTE: render.yaml "type: static" is not supported in Blueprint projects.
+  # Deploy the frontend separately as a Static Site via Render dashboard.
+  # See Step 3 in the Deploy section above.
+  # Build command: sed -i "s|http://localhost:8000|https://pricehunt-backend.onrender.com|g" index.html
+  # Publish directory: .
 
   # ── Redis ────────────────────────────────────────────────────────────────────
   # Redis is NOT included in this render.yaml.
