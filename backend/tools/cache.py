@@ -5,13 +5,17 @@ Gracefully falls back to no-op when Redis is not available.
 import os
 import json
 
-try:
-    import redis.asyncio as aioredis
-    _redis = aioredis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
-    HAS_REDIS = True
-except Exception:
-    _redis = None
-    HAS_REDIS = False
+REDIS_URL = os.getenv("REDIS_URL", "")
+HAS_REDIS = bool(REDIS_URL)
+_redis = None
+
+if HAS_REDIS:
+    try:
+        import redis.asyncio as aioredis
+        _redis = aioredis.from_url(REDIS_URL)
+    except Exception:
+        _redis = None
+        HAS_REDIS = False
 
 CACHE_TTL = 60 * 60 * 6  # 6 hours
 
