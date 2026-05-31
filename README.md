@@ -19,7 +19,56 @@ Pricehunt is not a scraper with a UI. It is an **autonomous LangGraph agent** th
 
 ---
 
+## Live demo
+
+> **Try it:** https://pricehunt-frontend.onrender.com
+
+### Finding a real voucher code — H&M
+
+The agent searched RetailMeNot, Honey, Idealo and Tavily web search in parallel,
+found code **T07V** on WorthEPenny, and returned it with 85% confidence in 15.8s.
+
+![H&M validated code T07V](docs/screenshots/demo-hm-code.png)
+
+---
+
+### Agent explains its sources and reasoning
+
+When asked "What sources did you check?" the agent breaks down exactly what it
+did — cache miss, scraper results, Tavily search — and why it rates the code
+at 30-40% confidence without real checkout validation.
+
+![Agent source explanation](docs/screenshots/demo-sources.png)
+
+---
+
+### Frankfurt in-store context
+
+The agent knows which merchants have physical Frankfurt stores. When asked about
+Zalando in-store deals it correctly flags Zalando as online-only and suggests
+H&M Zeil, MyZeil, and Nordwestzentrum instead.
+
+![Frankfurt store intelligence](docs/screenshots/demo-frankfurt.png)
+
+---
+
+### Pricehunt vs Joko — the agent makes the comparison
+
+> *"Joko does it for you silently.*
+> *Pricehunt shows its work so you stay in control."*
+>
+> *"If you just want set-and-forget savings, Joko wins on convenience.*
+> *If you want to understand what you're applying and why, Pricehunt adds real value."*
+
+![Joko comparison](docs/screenshots/demo-joko-comparison.png)
+
+> **How to add screenshots:** save the four images above into `docs/screenshots/`
+> in the repo with the filenames shown. The README will render them automatically on GitHub.
+
+---
+
 ## Architecture
+
 
 ```
 React UI (Vite)
@@ -415,6 +464,55 @@ EU market leader for digital leaflets.
 **⚠️ Limitation encountered:** No public API exists. Scraping works for MVP
 but a formal partnership would give structured data and remove scraping
 maintenance overhead.
+
+---
+
+### ✅ Playwright Checkout Validation *(most important next step)*
+
+**Current state:** The validator (`backend/tools/validator.py`) uses a heuristic
+model to estimate whether a code is valid — it penalises old-year codes, scores
+by merchant category, and applies a 70% pass rate for demo purposes. No real
+checkout is visited.
+
+**Why real validation matters:** Aggregator sites like RetailMeNot and WorthEPenny
+list codes that are months or years old. The only way to know if a code actually
+works today is to test it at the real checkout. This is what makes Pricehunt
+different from every static coupon database — but only once real validation is built.
+
+**How to implement per merchant:**
+
+```python
+# Example: real Playwright validation for Zalando
+async def validate_zalando(code: str) -> dict:
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+
+        # 1. Go to a test cart with a known item
+        await page.goto("https://www.zalando.de/warenkorb/")
+
+        # 2. Find the promo code input
+        await page.fill('[data-testid="voucher-input"]', code)
+        await page.click('[data-testid="voucher-submit"]')
+
+        # 3. Read the discount amount
+        discount = await page.text_content('[data-testid="discount-amount"]')
+
+        await browser.close()
+        saving = parse_eur(discount)
+        return {"code": code, "valid": saving > 0, "saving_eur": saving}
+```
+
+**Implementation plan:**
+1. Start with one merchant (ASOS or About You — simpler checkout flows)
+2. Add anti-detection: randomised user agent, slow typing, cookie acceptance
+3. Add Browserbase as fallback when local Playwright gets blocked
+4. Generalise to a pattern that works across merchant categories
+
+**Why this is the most impactful next step:** Once real validation works on even
+one merchant, Pricehunt's confidence scores become trustworthy — and the product
+story changes from "finds codes" to "guarantees codes work at checkout today."
+That's the gap between a demo and a product.
 
 ---
 
@@ -859,52 +957,197 @@ via a sed command in the build step (see below).
 
 ---
 
+## Deployed app
+
+The app is live — no setup needed to try it:
+
+| Service | URL |
+|---|---|
+| **Frontend** | https://pricehunt-frontend.onrender.com |
+| **Backend API** | https://pricehunt-backend-qmx5.onrender.com |
+| **API docs** | https://pricehunt-backend-qmx5.onrender.com/docs |
+
+> **Note on cold starts:** Render free tier spins down after 15 minutes of
+> inactivity. The first request after a sleep takes 30–60 seconds to wake up.
+> If the header shows ❌ Agent offline, wait 30 seconds and refresh.
+> Open the backend health URL first to wake it up:
+> https://pricehunt-backend-qmx5.onrender.com/health
+
+---
+
+## How to test the app
+
+### Quick test — 2 minutes
+
+1. Open https://pricehunt-frontend.onrender.com
+2. Wait for **⚡ Agent online** in the header
+3. Type `H&M` in the search box and press Enter
+4. Wait ~15 seconds — the agent searches 3 sources in parallel
+5. A validated code appears with saving amount and confidence score
+6. Ask in chat: `What sources did you check?`
+7. Ask in chat: `How is this different from Joko?`
+
+### Full demo flow — 5 minutes
+
+**Step 1 — Find a code**
+```
+Search box: H&M
+```
+Agent runs cache → scraper → Tavily search → validator.
+Returns best code with confidence score and source.
+
+**Step 2 — Understand the reasoning**
+```
+Chat: What sources did you check?
+```
+Agent explains exactly what it did, what it found, why it rated the
+confidence at 30-40% without real checkout validation.
+
+**Step 3 — Test local intelligence**
+```
+Chat: Any in-store deals near Frankfurt this week?
+```
+Agent knows which merchants have Frankfurt stores. Correctly flags
+online-only retailers and suggests alternatives with physical locations.
+
+**Step 4 — Test merchant comparison**
+```
+Chat: Which beauty store is more likely to have active codes — Douglas, Sephora or Lookfantastic?
+```
+Agent ranks them with reasoning based on voucher availability patterns.
+
+**Step 5 — Test self-awareness**
+```
+Chat: How confident are you the code actually works?
+```
+Agent gives honest confidence breakdown — what it verified, what it
+inferred, what would raise confidence (Reddit reports, checkout test).
+
+**Step 6 — Test the architecture explanation**
+```
+Click: How it works (quick reply button)
+```
+Agent explains LangGraph pipeline, reflection loop, MCP tool servers.
+
+**Step 7 — The Joko comparison**
+```
+Chat: How does Pricehunt differ from Joko?
+```
+Agent response:
+> *"Joko does it for you silently.*
+> *Pricehunt shows its work so you stay in control."*
+
+---
+
 ## Deploy to Render — step by step
+
+> **Already deployed?** Use the live app directly:
+> https://pricehunt-frontend.onrender.com
 
 ### What you will have after deploying
 
 ```
-https://pricehunt-backend.onrender.com   ← FastAPI agent (Python web service)
-https://pricehunt-frontend.onrender.com  ← index.html    (static site, free)
+https://pricehunt-backend-xxxx.onrender.com  ← FastAPI agent (Python web service)
+https://pricehunt-frontend.onrender.com      ← index.html (static site, free)
 ```
 
-Both are free tier. Render connects them automatically.
+Both are free tier. No credit card required.
 
-### Step 1 — push to GitHub
+> **Why two separate services?**
+> The backend is a running Python process — it needs CPU/RAM to execute the
+> LangGraph agent, call APIs, and run Playwright. Render calls this a Web Service.
+> The frontend is a single HTML file — no server needed, just file hosting.
+> Render calls this a Static Site. They talk to each other via `fetch()` calls
+> in `index.html → https://your-backend.onrender.com`.
+
+---
+
+### Step 1 — Push to GitHub
 
 ```bash
-git init
 git add .
-git commit -m "feat: scaffold full-stack MVP — LangGraph agent, FastAPI backend, vanilla HTML frontend"
-git remote add origin https://github.com/your-username/pricehunt-autonomous-voucher-agent.git
-git push -u origin main
+git commit -m "feat: initial deploy"
+git push
 ```
 
-### Step 2 — create a Render Blueprint
+---
 
-Go to https://render.com → New → Blueprint → connect your GitHub repo.
-Render reads `render.yaml` and creates all three services automatically.
+### Step 2 — Deploy the backend (Web Service)
 
-### Step 3 — add your secret API keys
+1. Go to https://render.com → **+ New → Web Service**
+2. Connect your GitHub repo `pricehunt-autonomous-voucher-agent`
+3. Fill in:
 
-Render will pause and ask you to fill in the keys marked `sync: false`.
-Enter them one by one in the Render dashboard:
+| Field | Value |
+|---|---|
+| **Name** | `pricehunt-backend` |
+| **Root Directory** | `backend` |
+| **Runtime** | Python 3 |
+| **Branch** | `main` |
+| **Region** | Frankfurt (EU Central) |
+| **Build Command** | `pip install -r requirements.txt && playwright install chromium` |
+| **Start Command** | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
+| **Instance Type** | Free |
+
+4. Scroll to **Environment Variables** → Add:
 
 ```
-ANTHROPIC_API_KEY   → your sk-ant-... key
-TAVILY_API_KEY      → your tvly-... key
-REDDIT_CLIENT_ID    → from reddit.com/prefs/apps
-REDDIT_CLIENT_SECRET
-RAKUTEN_API_KEY     → optional, for cashback
+ANTHROPIC_API_KEY  →  sk-ant-...      (platform.anthropic.com)
+TAVILY_API_KEY     →  tvly-dev-...    (app.tavily.com → Overview)
+FRONTEND_URL       →  https://pricehunt-frontend.onrender.com
 ```
 
-Click **Apply** — Render deploys the backend service.
+5. Click **Create Web Service**
+6. Wait ~5 minutes for build (installs all packages + downloads Chromium ~300MB)
+7. Confirm it works: `https://your-service.onrender.com/health` → `{"status":"ok"}`
 
-### Step 4 — done
+> **Note:** Blueprint (`render.yaml`) requires a credit card even for free services.
+> Creating the Web Service manually avoids this entirely.
 
-Render gives you two URLs. Open the frontend URL in a browser.
-The health check in `index.html` pings the backend on load and shows
-"⚡ Agent online" in the header when everything is connected.
+---
+
+### Step 3 — Deploy the frontend (Static Site)
+
+1. **+ New → Static Site** → same repo
+2. Fill in:
+
+| Field | Value |
+|---|---|
+| **Name** | `pricehunt-frontend` |
+| **Root Directory** | `frontend` |
+| **Branch** | `main` |
+| **Build Command** | `sed -i "s\|http://localhost:8000\|https://YOUR-BACKEND-URL.onrender.com\|g" index.html` |
+| **Publish Directory** | `.` |
+
+> Replace `YOUR-BACKEND-URL` with your actual backend URL from Step 2.
+> The `sed` command swaps the localhost URL in `index.html` with the real backend URL.
+> This is the entire "build step" — no npm, no bundler, one command.
+
+3. No environment variables needed
+4. Click **Create Static Site** — deploys in ~1 minute
+
+---
+
+### Step 4 — Add FRONTEND_URL to backend
+
+After both services are live, go to backend → **Environment** → add:
+
+```
+FRONTEND_URL  →  https://pricehunt-frontend.onrender.com
+```
+
+Save — Render redeploys the backend. This fixes CORS so the frontend
+can talk to the backend.
+
+---
+
+### Step 5 — Done
+
+Open `https://pricehunt-frontend.onrender.com` — header shows **⚡ Agent online**.
+
+> **Free tier cold starts:** Services spin down after 15 minutes of inactivity.
+> First request after sleep takes 30–60 seconds. Not a bug — just free tier behaviour.
+> Wake up the backend first by visiting `/health`, then refresh the frontend.
 
 ---
 
