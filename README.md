@@ -265,13 +265,21 @@ See `.claude/tools/` for the tool definition files and `.claude/skills/` for the
 
 ## APIs — what, why, and how to get them
 
+> **TL;DR — you only need 2 keys to run Pricehunt.**
+> Scraping (RetailMeNot, Honey, Idealo, Bonial) requires no API keys at all —
+> it is plain Playwright loading public web pages. The only keys needed are the
+> LLM brain and the web search layer.
+
+---
+
+## ✅ Required APIs (just these two)
+
 ### 🧠 Anthropic API
 **What:** The LLM powering every part of the agent. One model, used everywhere:
 - `claude-sonnet-4-6` — planner, reflection, code extraction, and chat responses.
 
 A single model keeps the codebase simple and reasoning quality consistent across
-all agent nodes. There is no cheaper model for "simpler" tasks — Sonnet is fast
-enough and the cost difference is negligible at this scale.
+all agent nodes.
 
 **Why Anthropic over OpenAI:** Claude follows complex structured instructions reliably,
 produces clean JSON plans without hallucinating tool names, and handles long tool-result
@@ -290,13 +298,10 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 
 ### 🔍 Tavily Search API
 **What:** A search API built specifically for AI agents. Returns clean, LLM-optimised
-snippets with no SEO noise — structured exactly for downstream code extraction.
-Used by the search MCP server to find codes buried in blog posts, deal forums,
+snippets with no SEO noise. Used to find codes buried in blog posts, deal forums,
 and news articles that scraping aggregators like RetailMeNot miss.
 
-**Why Tavily over Brave Search:**
-
-We evaluated three options before choosing Tavily:
+**Why Tavily over alternatives:**
 
 | | Tavily | Brave Search | Google CSE |
 |---|---|---|---|
@@ -305,18 +310,10 @@ We evaluated three options before choosing Tavily:
 | Official Python SDK | ✅ `pip install tavily-python` | ❌ Manual HTTP client | ❌ Manual HTTP client |
 | Setup friction | Sign up, get key, done | Requires payment method on file | Requires Google Cloud project |
 
-The decisive reason: Tavily gives you **1,000 genuinely free searches per month
-with no credit card required**. Brave requires billing setup even to access the
-free monthly credit. For an open-source project where contributors should be able
-to clone and run immediately, removing payment friction is the right call.
-
-The secondary reason: Tavily results are already optimised for LLM consumption —
-cleaner snippets, better relevance for agent use cases, less post-processing needed.
-
 **How to get:**
 1. Go to https://app.tavily.com
 2. Sign up — email only, no credit card
-3. Dashboard → API Keys → Create key
+3. Overview (left sidebar) → copy your `tvly-dev-...` key
 
 ```
 TAVILY_API_KEY=tvly-...
@@ -324,188 +321,141 @@ TAVILY_API_KEY=tvly-...
 
 > **Cost estimate:** Each agent run fires 2–3 Tavily queries.
 > 1,000 free requests/month = ~300–500 full agent runs before any charge.
-> Well above what you need for a demo or production MVP.
+
+---
+
+## ⏭ Future development — APIs that would enrich the data
+
+These were researched and evaluated during development. None are required for
+the MVP but each adds a meaningful data layer. Limitations encountered are noted
+so future contributors know what to expect.
 
 ---
 
 ### 🤖 Reddit API
-**What:** Access to Reddit posts and comments. Used to search r/deals, r/promo_codes,
-r/frugal, and merchant-specific subreddits for codes that haven't reached aggregators yet.
-
-**Why Reddit:** Reddit is often 24–48 hours ahead of RetailMeNot for fresh codes.
-Users post codes the moment they find them. Especially powerful for flash sales and
-limited-time codes that expire before scrapers catch up.
+**What it would add:** Access to r/deals, r/promo_codes, r/frugal and
+merchant-specific subreddits. Reddit is often 24–48 hours ahead of RetailMeNot
+for fresh codes — users post flash sale codes the moment they go live, before
+aggregators catch up.
 
 **How to get:**
 1. Go to https://www.reddit.com/prefs/apps
-2. Click "create another app" at the bottom
-3. Choose type: **script**
-4. Name: `pricehunt-agent`
-5. Redirect URI: `http://localhost`
-6. Submit → copy `client_id` (under the app name) and `client_secret`
+2. Choose type: **script**, redirect URI: `http://localhost`
+3. Copy `client_id` and `client_secret`
 
 ```
-REDDIT_CLIENT_ID=abc123...
-REDDIT_CLIENT_SECRET=xyz789...
+REDDIT_CLIENT_ID=...
+REDDIT_CLIENT_SECRET=...
 ```
+
+**⚠️ Limitation encountered:** Reddit introduced a mandatory
+[Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564)
+in 2026 which requires explicit approval before creating API apps. The approval
+process was not instant during development. Tavily partially covers this gap as
+it indexes Reddit pages in its web search results.
 
 ---
 
 ### 🛒 Rakuten Advertising API
-**What:** Affiliate network API. Provides structured cashback rates and occasionally
-exclusive promo codes for 2,500+ merchants in the EU and US.
-
-**Why Rakuten:** Unlike scraping, Rakuten gives you structured data with confirmed
-merchant IDs, exact cashback percentages, and programme terms. It also opens the door
-to a cashback revenue model — if users click through Pricehunt's tracked links, the
-app earns a small commission per purchase.
-
-**Why not Commission Junction or Awin:** Rakuten has the best EU merchant coverage
-for fashion and electronics. Awin is a good alternative for DE-specific merchants.
+**What it would add:** Structured cashback rates and affiliate links for 2,500+
+EU and US merchants. Unlocks a revenue model — if users click through Pricehunt's
+tracked links, the app earns a commission per purchase (same model Joko uses).
+Also provides exclusive promo codes from direct merchant partnerships not
+available on public aggregators.
 
 **How to get:**
-1. Go to https://rakutenadvertising.com
-2. Sign up as a Publisher (free)
-3. Wait for approval (1–2 business days)
-4. API Keys section → generate key
+1. Sign up as a Publisher at https://rakutenadvertising.com
+2. Wait for approval (1–2 business days)
+3. Account → API Access → generate key
 
 ```
 RAKUTEN_API_KEY=...
 ```
 
+**⚠️ Limitation encountered:** Rakuten requires full account setup including
+address, tax declaration, and channel verification before granting API access.
+This is a multi-step process designed for established publishers — not a quick
+signup. Apply early if you need this for production.
+
 ---
 
-### 🌐 Browserbase API *(optional)*
-**What:** Managed cloud browser service. Runs Playwright sessions in the cloud with
-built-in anti-bot handling, residential proxies, and CAPTCHA solving.
-
-**Why:** Many merchant checkout pages detect and block headless Playwright browsers.
-Browserbase solves this transparently — the validation MCP server calls Browserbase
-instead of running Playwright locally, and checkout pages see a real browser session.
-
-**Why optional for MVP:** Local Playwright works fine on most merchants. Add Browserbase
-if you get blocked on specific sites.
+### 🌐 Browserbase API
+**What it would add:** Managed cloud browser sessions with built-in anti-bot
+handling, residential proxies, and CAPTCHA solving. Replaces local Playwright
+for the checkout validation step — merchant checkout pages see a real browser
+session instead of a detectable headless one.
 
 **How to get:**
-1. Go to https://browserbase.com
-2. Sign up → Create Project → copy API key and project ID
+1. Sign up at https://browserbase.com
+2. Create Project → copy API key and project ID
 
 ```
 BROWSERBASE_API_KEY=bb_...
 BROWSERBASE_PROJECT_ID=prj_...
 ```
 
----
-
-### 🗄 Redis *(auto-configured on Render)*
-**What:** In-memory key-value store. Used for:
-- Code cache with 6h TTL per merchant
-- Agent memory: which source worked best per merchant
-- User preferences from chat history
-
-**Why Redis over Postgres for caching:** Redis is orders of magnitude faster for
-key-value lookups (sub-millisecond). The agent reads merchant history before every
-run — it needs to be instant.
-
-**How to get locally:**
-
-**Windows:**
-```bash
-# Download the Windows installer from https://github.com/microsoftarchive/redis/releases
-# OR use WSL2 (recommended) and follow the Linux instructions below
-winget install Redis.Redis
-redis-server
-```
-
-**Linux (Ubuntu / Debian):**
-```bash
-sudo apt update && sudo apt install redis-server -y
-sudo systemctl start redis-server
-sudo systemctl enable redis-server   # auto-start on boot
-redis-cli ping                        # should return PONG
-```
-
-**macOS:**
-```bash
-brew install redis && brew services start redis
-```
-
-On Render: add the Redis add-on in your dashboard → it injects `REDIS_URL` automatically.
-
-```
-REDIS_URL=redis://localhost:6379
-```
+**⚠️ Limitation encountered:** Not needed for most merchants during development.
+Local Playwright worked on Zalando, About You, H&M. Add Browserbase only if
+you see `error: "blocked"` responses from the validator on specific sites.
+Usage-based pricing — cost scales with number of validations.
 
 ---
 
-### 🐘 PostgreSQL *(auto-configured on Render)*
-**What:** Relational database. Used for long-term run history per merchant, code
-success/failure logs, and user session data.
+### 📰 Bonial / kaufDA Partnership API
+**What it would add:** Structured weekly leaflet feed from 500+ EU retailers
+instead of scraping. Push notifications when new leaflets go live. Full
+merchant catalogue with IDs. Currently the agent scrapes kaufDA.de directly
+which works but is fragile to site changes.
 
-**How to get locally:**
+**How to get:** Contact partner@bonial.com — this is a business partnership,
+not a self-serve API. Bonial's platform (kaufDA in DE, Bonial in FR) is the
+EU market leader for digital leaflets.
 
-**Windows:**
-```bash
-# Download installer from https://www.postgresql.org/download/windows/
-# Run the EDB installer — it sets up the service automatically
-# Or use WSL2 and follow the Linux instructions
-```
-
-**Linux (Ubuntu / Debian):**
-```bash
-sudo apt update && sudo apt install postgresql postgresql-contrib -y
-sudo systemctl start postgresql
-sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'dev';"
-sudo -u postgres createdb pricehunt
-```
-
-**macOS:**
-```bash
-brew install postgresql@16 && brew services start postgresql@16
-createdb pricehunt
-```
-
-On Render: add the Postgres add-on → injects `DATABASE_URL` automatically.
-
-```
-DATABASE_URL=postgresql://user:pass@localhost:5432/pricehunt
-```
+**⚠️ Limitation encountered:** No public API exists. Scraping works for MVP
+but a formal partnership would give structured data and remove scraping
+maintenance overhead.
 
 ---
 
 ## Full `.env` file
 
-Copy `.env.example` to `.env` and fill in your values:
+Copy `backend/.env.example` to `backend/.env` and fill in your values.
+
+**Minimum to run the agent (just these two):**
 
 ```bash
-# ── LLM ──────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY=sk-ant-api03-...       # platform.anthropic.com
+TAVILY_API_KEY=tvly-...                  # app.tavily.com → Overview
+```
 
-# ── Search ───────────────────────────────────────────────────────
-TAVILY_API_KEY=tvly-...                  # app.tavily.com (1k free req/mo, no credit card)
-REDDIT_CLIENT_ID=abc123...               # reddit.com/prefs/apps
-REDDIT_CLIENT_SECRET=xyz789...           # reddit.com/prefs/apps
+**Full file with all optional keys:**
 
-# ── Affiliate / cashback ─────────────────────────────────────────
-RAKUTEN_API_KEY=...                      # rakutenadvertising.com (publisher)
+```bash
+# ── REQUIRED ─────────────────────────────────────────────────────
+ANTHROPIC_API_KEY=sk-ant-api03-...       # platform.anthropic.com
+TAVILY_API_KEY=tvly-...                  # app.tavily.com (1k free/mo, no credit card)
 
-# ── Validation browser (optional) ────────────────────────────────
-BROWSERBASE_API_KEY=bb_...               # browserbase.com
-BROWSERBASE_PROJECT_ID=prj_...           # browserbase.com
+# ── FUTURE DEVELOPMENT — add when needed ─────────────────────────
+# Reddit API — fresh codes from r/deals (blocked by new policy in 2026)
+REDDIT_CLIENT_ID=                        # reddit.com/prefs/apps → script app
+REDDIT_CLIENT_SECRET=                    # same page
 
-# ── Cache & DB ───────────────────────────────────────────────────
+# Rakuten Affiliate — cashback rates + revenue model (requires full account setup)
+RAKUTEN_API_KEY=                         # rakutenadvertising.com → publisher signup
+
+# Browserbase — managed cloud browsers if Playwright gets blocked
+BROWSERBASE_API_KEY=                     # browserbase.com
+BROWSERBASE_PROJECT_ID=                  # browserbase.com
+
+# ── INFRASTRUCTURE ────────────────────────────────────────────────
 REDIS_URL=redis://localhost:6379         # Render auto-fills in production
 DATABASE_URL=postgresql://...            # Render auto-fills in production
-
-# ── App ──────────────────────────────────────────────────────────
 FRONTEND_URL=http://localhost:5173       # Render auto-fills in production
 ```
 
-Priority for getting keys:
-1. `ANTHROPIC_API_KEY` — get this first, nothing works without it
-2. `TAVILY_API_KEY` — 2 minutes, genuinely free (no credit card)
-3. `REDDIT_CLIENT_ID` + `SECRET` — 5 minutes, free
-4. `RAKUTEN_API_KEY` — apply early, takes 1–2 days for approval
+> **Note on scraping:** RetailMeNot, Honey, Idealo, and Bonial/kaufDA are scraped
+> directly using Playwright — no API key required. These are public websites.
+> The agent loads them like a browser and parses the HTML.
 
 ---
 
@@ -514,151 +464,194 @@ Priority for getting keys:
 ### Prerequisites
 
 - Python 3.11+ — https://www.python.org/downloads/
-- Redis running locally (see Redis section above for your OS)
-- A modern browser (Chrome, Firefox, Edge) to open `index.html`
+- A modern browser (Chrome, Firefox, Edge)
+- `ANTHROPIC_API_KEY` — from https://platform.anthropic.com
+- `TAVILY_API_KEY` — from https://app.tavily.com
 
-> **Node.js is NOT required** to run Pricehunt. The frontend is a plain HTML file
-> with no build step. Node.js is only needed if you want to run the React reference
-> implementation in `frontend/src/` — which is optional and not deployed.
+> **Node.js is NOT required.** The frontend is a plain HTML file — no build step.
 
-> **Windows users:** WSL2 (Windows Subsystem for Linux) is strongly recommended.
-> It gives you a full Linux environment inside Windows where all commands in this
-> README work as written. Install it with `wsl --install` in PowerShell as admin,
-> then open Ubuntu and follow the Linux instructions.
+> **Windows users:** Git Bash (comes with Git for Windows) is the easiest terminal
+> for these commands. All commands below work in Git Bash as written.
 
-### 1. Clone the repo
+---
+
+### Step 1 — Clone the repo
 
 ```bash
-git clone https://github.com/your-username/pricehunt-autonomous-voucher-agent.git
+git clone https://github.com/dbystrova26/pricehunt-autonomous-voucher-agent.git
 cd pricehunt-autonomous-voucher-agent
 ```
 
-### 2. Backend — Python virtual environment
+---
 
-Always use a virtual environment. This keeps Pricehunt's dependencies isolated from
-your system Python and prevents version conflicts.
+### Step 2 — Create the virtual environment
 
 ```bash
 cd backend
+python -m venv .venv
+```
 
-# Create the virtual environment
-python3 -m venv .venv
+Activate it:
 
-# Activate it
-# macOS / Linux / WSL2:
-source .venv/bin/activate
+```bash
+# Git Bash / macOS / Linux:
+source .venv/Scripts/activate
 
-# Windows (Command Prompt):
-# .venv\Scripts\activate.bat
+# Windows Command Prompt:
+# .venv\Scriptsctivate.bat
 
-# Windows (PowerShell):
+# Windows PowerShell:
 # .venv\Scripts\Activate.ps1
+```
 
-# Your prompt should now show (.venv)
-# Install dependencies inside the venv
-pip install -r requirements.txt
+Your prompt should now show `(.venv)`.
 
-# Install Playwright's browser binary (Chromium)
+```bash
+# Install dependencies (use --prefer-binary to avoid compiler errors on Windows)
+pip install -r requirements.txt --prefer-binary
+
+# Install the Chromium browser for Playwright checkout validation
 playwright install chromium
+```
 
-# Copy env file and fill in your API keys
+> **Note:** The `.venv` folder is gitignored — never commit it.
+> Anyone cloning the repo runs these steps to recreate it locally.
+
+To reactivate in a new terminal:
+```bash
+cd backend
+source .venv/Scripts/activate
+```
+
+---
+
+### Step 3 — Set up your `.env` file
+
+```bash
+# Copy the template
 cp .env.example .env
 ```
 
-To deactivate the virtual environment when you're done:
+Open `backend/.env` and fill in your two required keys:
 
 ```bash
-deactivate
+ANTHROPIC_API_KEY=sk-ant-...    # platform.anthropic.com → API Keys → Create Key
+TAVILY_API_KEY=tvly-dev-...     # app.tavily.com → Overview → copy key
 ```
 
-To reactivate in a new terminal session:
+Leave everything else as-is for local development:
 
 ```bash
-cd backend
-source .venv/bin/activate
+REDDIT_CLIENT_ID=               # optional — skip for now
+REDDIT_CLIENT_SECRET=           # optional — skip for now
+RAKUTEN_API_KEY=                 # optional — skip for now
+BROWSERBASE_API_KEY=             # optional — skip for now
+BROWSERBASE_PROJECT_ID=          # optional — skip for now
+REDIS_URL=redis://localhost:6379 # leave as-is
+DATABASE_URL=                    # leave empty
+FRONTEND_URL=http://localhost:5173
 ```
 
-> **Note:** The `.venv` folder is in `.gitignore` — never commit it.
-> Anyone cloning the repo runs the setup steps above to recreate it locally.
+---
 
-### 3. Start Redis (if not already running)
+### Step 4 — Start the backend
 
-**Windows (WSL2 / Ubuntu):**
-```bash
-sudo service redis-server start
-redis-cli ping   # should return PONG
-```
-
-**Windows (native, if installed via winget):**
-```powershell
-redis-server
-```
-
-**Linux:**
-```bash
-sudo systemctl start redis-server
-redis-cli ping
-```
-
-**macOS:**
-```bash
-brew services start redis
-```
-
-### 4. Run the backend
+Make sure your venv is active, then:
 
 ```bash
-# Make sure .venv is active
-source backend/.venv/bin/activate
-
 uvicorn main:app --reload --port 8000
-# → http://localhost:8000
-# → http://localhost:8000/docs  (auto-generated API docs)
 ```
 
-### 5. Frontend
-
-No install needed. The frontend is a single HTML file.
-
-**Option A — open directly in browser (simplest):**
-```bash
-# Just double-click frontend/index.html
-# or drag it into Chrome/Firefox
+You should see:
 ```
-> This works for viewing the UI but the browser will block `fetch()` calls
-> to localhost due to CORS when opened as a `file://` URL.
-> Use Option B during active development.
+INFO:     Uvicorn running on http://0.0.0.0:8000
+INFO:     Application startup complete.
+```
 
-**Option B — serve with Python (recommended for dev):**
+Check it's working: open http://localhost:8000/docs in your browser —
+FastAPI auto-generates interactive API docs showing all endpoints.
+
+---
+
+### Step 5 — Start the frontend
+
+Open a **second terminal** (keep the backend running in the first):
+
 ```bash
 cd frontend
-python3 -m http.server 5173
-# → open http://localhost:5173 in your browser
+python -m http.server 5173
 ```
-Python's built-in HTTP server serves the file over `http://` so fetch() calls
-to `http://localhost:8000` work without any CORS issues.
 
-The `BACKEND` constant in `index.html` defaults to `http://localhost:8000`
-so it connects to your local FastAPI automatically — no configuration needed.
+Open http://localhost:5173 in your browser.
 
-### 6. Quick start with Make
+---
 
-A `Makefile` at the repo root wraps the backend setup:
+## How to use the app
+
+Once both servers are running:
+
+### 1. Check the agent is online
+The header should show **⚡ Agent online**. If it shows ❌ offline, check
+that `uvicorn` is running in your first terminal.
+
+### 2. Search for voucher codes
+Paste a merchant URL or name into the search box and press Enter:
+```
+zalando.de
+https://www.aboutyou.de/checkout
+Nike
+MediaMarkt Germany
+```
+
+The agent will:
+- Check its cache (instant if seen before)
+- Scrape RetailMeNot, Honey, Idealo in parallel
+- Search Tavily for fresh codes in blogs and forums
+- Check Bonial/kaufDA for EU in-store deals
+- Validate the top codes at real checkout with Playwright
+- Return the best codes ranked by saving
+
+### 3. Copy or apply a code
+- Click **📋 Copy** to copy a code to clipboard
+- Click **⚡ Auto-apply best code** to simulate auto-applying at checkout
+
+### 4. Refine results using the chat
+The right panel is a live chat with the agent. Try:
+```
+Only show codes saving more than €15
+Search Reddit for fresher Zalando codes
+Why did WELCOME10 only save €10?
+Try H&M instead
+Any in-store deals near Frankfurt this week?
+```
+
+The agent re-runs tools or filters results based on your message and
+updates the left panel automatically.
+
+### 5. Ask how the agent thinks
+```
+What sources did you check?
+Why did you skip the search tool this time?
+How confident are you this code still works?
+How does the agent work?
+```
+
+The agent explains its own reasoning — this is the reflection node in action.
+
+---
+
+### Quick start with Make
 
 ```bash
 make setup        # create venv, install Python deps, install Chromium
 make redis-start  # start Redis (auto-detects Linux/macOS/WSL2)
-make redis-check  # verify Redis is reachable
 make backend      # start FastAPI on port 8000
-make test         # run pytest inside the venv
 make clean        # remove .venv
 ```
 
 Then in a second terminal:
 ```bash
-cd frontend
-python3 -m http.server 5173
-# → open http://localhost:5173
+cd frontend && python -m http.server 5173
 ```
 
 ---
